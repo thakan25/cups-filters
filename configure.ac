@@ -338,6 +338,7 @@ fi
 AC_SUBST(AVAHI_LIBS)
 AC_SUBST(AVAHI_CFLAGS)
 
+
 dnl
 dnl   LDAP configuration stuff for CUPS.
 dnl
@@ -349,6 +350,19 @@ dnl   property of Apple Inc. and are protected by Federal copyright
 dnl   law.  Distribution and use rights are outlined in the file "COPYING"
 dnl   which should have been included with this file.
 dnl
+
+
+# including EXIF library
+EXIF_LIBS="-lexif"
+EXIF_CFLAGS="-D_REENTRANT"
+
+
+
+echo "#####################: SACHIN THAKAN: AVAHI_LIBS in configure.ac: $AVAHI_LIBS"
+echo "******************SACHIN THAKAN: AVAHI_CFLAGS in configure.ac: $AVAHI_CFLAGS"
+
+AC_SUBST(EXIF_LIBS)
+AC_SUBST(EXIF_CFLAGS)
 
 AC_ARG_ENABLE([ldap], [AS_HELP_STRING([--disable-ldap], [disable LDAP support.])],
         [enable_ldap="$enableval"],
@@ -392,6 +406,9 @@ fi
 
 AC_SUBST(AVAHI_GLIB_CFLAGS)
 AC_SUBST(AVAHI_GLIB_LIBS)
+
+echo "******************SACHIN THAKAN: AVAHI_GLIB in configure.ac: $AVAHI_GLIB"
+echo "******************SACHIN THAKAN: AVAHI_GLIB_CFLAGS in configure.ac: $AVAHI_GLIB_CFLAGS"
 
 PKG_CHECK_MODULES(GIO, [gio-2.0])
 AC_SUBST(GIO_CFLAGS)

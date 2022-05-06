@@ -32,6 +32,7 @@
 #  endif /* WIN32 */
 #  include <errno.h>
 #  include <math.h>
+#  include <libexif/exif-data.h>
 
 
 /*
@@ -210,5 +211,6 @@ extern int		_cupsRasterExecPS(cups_page_header2_t *h,
 extern void		_cupsRasterAddError(const char *f, ...);
 extern void		_cupsRasterClearError(void);
 
+int		_cupsImageReadEXIF(cups_image_t *img, FILE *fp);
 #endif /* !_CUPS_IMAGE_PRIVATE_H_ */
 

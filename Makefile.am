@@ -524,6 +524,7 @@ libcupsfilters_la_LIBADD = \
 	$(STRCASESTR) \
 	$(CUPS_LIBS) \
 	$(LCMS_LIBS) \
+	$(EXIF_LIBS) \
 	$(LIBQPDF_LIBS) \
 	$(LIBJPEG_LIBS) \
 	$(LIBPNG_LIBS) \
@@ -535,6 +536,7 @@ libcupsfilters_la_CFLAGS = \
 	-I$(srcdir)/fontembed/ \
 	$(FONTCONFIG_CFLAGS) \
 	$(CUPS_CFLAGS) \
+	$(EXIF_CFLAGS) \
 	$(LCMS_CFLAGS) \
 	$(LIBQPDF_CFLAGS) \
 	$(LIBJPEG_CFLAGS) \
@@ -981,9 +983,11 @@ imagetopdf_SOURCES = \
 	filter/imagetopdf.c
 imagetopdf_CFLAGS = \
 	$(CUPS_CFLAGS) \
+	$(EXIF_CFLAGS) \
 	-I$(srcdir)/cupsfilters/
 imagetopdf_LDADD = \
 	$(CUPS_LIBS) \
+	$(EXIF_LIBS) \
 	libcupsfilters.la
 
 imagetops_SOURCES = \
@@ -1197,6 +1201,7 @@ cups_browsed_CFLAGS = \
 	-I$(srcdir)/ppd/ \
 	$(CUPS_CFLAGS) \
 	$(AVAHI_CFLAGS) \
+	$(EXIF_CFLAGS) \
 	$(AVAHI_GLIB_CFLAGS) \
 	$(GLIB_CFLAGS) \
 	$(GIO_CFLAGS) \
@@ -1207,6 +1212,7 @@ cups_browsed_LDADD = \
 	libppd.la \
 	$(CUPS_LIBS) \
 	$(AVAHI_LIBS) \
+	$(EXIF_LIBS) \
 	$(AVAHI_GLIB_LIBS) \
 	$(GLIB_LIBS) \
 	$(GIO_LIBS) \
