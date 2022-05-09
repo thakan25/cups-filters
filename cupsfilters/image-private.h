@@ -212,5 +212,6 @@ extern void		_cupsRasterAddError(const char *f, ...);
 extern void		_cupsRasterClearError(void);
 
 int		_cupsImageReadEXIF(cups_image_t *img, FILE *fp);
+static void trim_spaces(char *buf);
 #endif /* !_CUPS_IMAGE_PRIVATE_H_ */
 

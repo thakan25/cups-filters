@@ -20,11 +20,11 @@
 
 #include "image-private.h"
 
-#  include <libexif/exif-data.h>
+#include <libexif/exif-data.h>
 #ifdef HAVE_LIBJPEG
 #include <jpeglib.h> /* JPEG/JFIF image definitions */
 
-
+#define JPEG_APP0 0xE0 /* APP0 marker code */
 /*
  * '_cupsImageReadJPEG()' - Read a JPEG image file.
  */
@@ -134,7 +134,16 @@ _cupsImageReadJPEG(
   img->xsize = cinfo.output_width;
   img->ysize = cinfo.output_height;
 
-  if (cinfo.X_density > 0 && cinfo.Y_density > 0 && cinfo.density_unit > 0)
+  /*
+    scan image file for exif data
+    */
+  int temp = _cupsImageReadEXIF(img, fp);
+
+  /* 
+    check headers only if EXIF contains no info about ppi
+    */
+
+  if (img->xppi == 0 && cinfo.X_density > 0 && cinfo.Y_density > 0 && cinfo.density_unit > 0)
   {
     if (cinfo.density_unit == 1)
     {
@@ -154,8 +163,6 @@ _cupsImageReadJPEG(
       img->xppi = img->yppi = 200;
     }
   }
-
-  int temp = _cupsImageReadEXIF(img, fp);
 
   DEBUG_printf(("DEBUG: JPEG image %dx%dx%d, %dx%d PPI\n",
                 img->xsize, img->ysize, cinfo.output_components,
@@ -310,90 +317,4 @@ _cupsImageReadJPEG(
   return (0);
 }
 
-static void trim_spaces(char *buf)
-{
-  char *s = buf - 1;
-  for (; *buf; ++buf)
-  {
-    if (*buf != ' ')
-      s = buf;
-  }
-  *++s = 0; /* nul terminate the string on the first of the final spaces */
-}
-
-int _cupsImageReadEXIF(cups_image_t *img, FILE *fp)
-{
-  if (fp == NULL)
-  {
-    // printf("File Not Found!\n");
-    return -1;
-  }
-
-  fseek(fp, 0L, SEEK_END);
-
-  // calculating the size of the file
-  long int res = ftell(fp);
-  char buf[res + 1];
-
-  fseek(fp, 0, SEEK_SET);
-  int pos = 0;
-  int c;
-
-  while ((c = fgetc(fp)) != EOF)
-  {
-    buf[pos] = c;
-    pos++;
-  }
-
-  // ExifData* ed = exif_data_new_from_file(argv[1]);
-  ExifData *ed = exif_data_new_from_data(buf, res);
-
-  if (ed == NULL)
-  {
-    DEBUG_printf(("DEBUG: No EXIF data found"));
-    return 2;
-  }
-
-  printf("SACHIN THAKAN: using exif library");
-
-  ExifIfd ifd = EXIF_IFD_0;
-  ExifTag tagX = EXIF_TAG_X_RESOLUTION;
-  ExifTag tagY = EXIF_TAG_Y_RESOLUTION;
-
-  ExifEntry *entryX = exif_content_get_entry(ed->ifd[ifd], tagX);
-  ExifEntry *entryY = exif_content_get_entry(ed->ifd[ifd], tagY);
-  if (entryX)
-  {
-    char buf1[1024];
-
-    /* Get the contents of the tag in human-readable form */
-    exif_entry_get_value(entryX, buf1, sizeof(buf));
-
-    trim_spaces(buf1);
-    if (*buf1)
-    {
-      int xRes;
-      sscanf(buf1, "%d", &xRes);
-      img->xppi = xRes;
-    }
-  }
-
-  if (entryY)
-  {
-    char buf2[1024];
-
-    /* Get the contents of the tag in human-readable form */
-    exif_entry_get_value(entryY, buf2, sizeof(buf));
-
-    trim_spaces(buf2);
-    if (*buf2)
-    {
-      int yRes;
-      sscanf(buf2, "%d", &yRes);
-      img->yppi = yRes;
-    }
-  }
-
-  return 1;
-}
 #endif /* HAVE_LIBJPEG */

@@ -867,3 +867,113 @@ cups_image_t* cupsImageCrop(cups_image_t* img,int posw,int posh,int width,int he
   free(pixels);
   return temp;
 }
+
+/*
+  helper function required by EXIF read function 
+  */
+
+static void trim_spaces(char *buf)
+{
+  char *s = buf - 1;
+  for (; *buf; ++buf)
+  {
+    if (*buf != ' ')
+      s = buf;
+  }
+  *++s = 0; /* nul terminate the string on the first of the final spaces */
+}
+
+/*
+  implementation for EXIF read function
+  */
+
+int _cupsImageReadEXIF(cups_image_t *img, FILE *fp)
+{
+  
+  if (fp == NULL)
+  {
+    return -1;
+  }
+
+
+  fseek(fp, 0L, SEEK_END);
+
+  // calculating the size of the file
+  long int res = ftell(fp);
+  
+
+  fseek(fp, 0L, SEEK_SET);
+  char buf[res + 1];
+
+  // char buffer[100];
+  // long int res = 0;
+
+  // while (!feof(fp)) // to read file
+  //   {
+  //       // function used to read the contents of file
+  //       fread(buffer, sizeof(char), 1, fp);
+  //       res++;
+  //   }
+
+  int pos = 0;
+  int c;
+ 
+
+  // return 1;
+
+  while ((c = fgetc(fp)) != EOF)
+  {
+    buf[pos] = c;
+    pos++;
+  }
+
+
+  ExifData *ed = exif_data_new_from_data(buf, res);
+
+  if (ed == NULL)
+  {
+    DEBUG_printf(("DEBUG: No EXIF data found"));
+    return 2;
+  }
+
+  DEBUG_printf(("SACHIN THAKAN: using exif library"));
+
+  ExifIfd ifd = EXIF_IFD_0;
+  ExifTag tagX = EXIF_TAG_X_RESOLUTION;
+  ExifTag tagY = EXIF_TAG_Y_RESOLUTION;
+
+  ExifEntry *entryX = exif_content_get_entry(ed->ifd[ifd], tagX);
+
+  ExifEntry *entryY = exif_content_get_entry(ed->ifd[ifd], tagY);
+  if (entryX)
+  {
+    char buf1[1024];
+
+    exif_entry_get_value(entryX, buf1, sizeof(buf1));
+
+    trim_spaces(buf1);
+    if (*buf1)
+    {
+      int xRes;
+      sscanf(buf1, "%d", &xRes);
+      img->xppi = xRes;
+    }
+  }
+
+  if (entryY)
+  {
+    char buf2[1024];
+
+    exif_entry_get_value(entryY, buf2, sizeof(buf2));
+
+    trim_spaces(buf2);
+    if (*buf2)
+    {
+      int yRes;
+      sscanf(buf2, "%d", &yRes);
+      img->yppi = yRes;
+    }
+  }
+
+  return 1;
+}
