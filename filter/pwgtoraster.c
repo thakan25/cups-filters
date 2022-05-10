@@ -49,10 +49,21 @@ main(int  argc,	   /* I - Number of command-line arguments */
 #endif /* HAVE_SIGSET */
 
  /*
-  * Fire up the pdftoraster() filter function
+  * Fire up the cfFilterPDFToRaster() filter function
   */
 
-  ret = filterCUPSWrapper(argc, argv, pwgtoraster, NULL, &JobCanceled);
+  cf_filter_out_format_t outformat = CF_FILTER_OUT_FORMAT_CUPS_RASTER;
+  char *t = getenv("FINAL_CONTENT_TYPE");
+  if (t) {
+    if (strcasestr(t, "pwg"))
+      outformat = CF_FILTER_OUT_FORMAT_PWG_RASTER;
+    else if (strcasestr(t, "urf"))
+      outformat = CF_FILTER_OUT_FORMAT_APPLE_RASTER;
+    else if (strcasestr(t, "pclm"))
+      outformat = CF_FILTER_OUT_FORMAT_PCLM;
+  }
+
+  ret = cfFilterCUPSWrapper(argc, argv, cfFilterPWGToRaster, &outformat, &JobCanceled);
 
   if (ret)
     fprintf(stderr, "ERROR: pwgtoraster filter function failed.\n");

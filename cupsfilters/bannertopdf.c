@@ -43,7 +43,7 @@
 #include "filter.h"
 #include "pdf.h"
 
-enum banner_info
+typedef enum banner_info_e
 {
     INFO_IMAGEABLE_AREA = 1,
     INFO_JOB_BILLING = 1 << 1,
@@ -63,16 +63,16 @@ enum banner_info
     INFO_PRINTER_NAME = 1 << 15,
     INFO_TIME_AT_CREATION = 1 << 16,
     INFO_TIME_AT_PROCESSING = 1 << 17
-};
+} banner_info_t;
 
-typedef struct
+typedef struct banner_s
 {
     char *template_file;
     char *header, *footer;
     unsigned infos;
 } banner_t;
 
-void banner_free(banner_t *banner)
+static void banner_free(banner_t *banner)
 {
     if (banner)
     {
@@ -118,7 +118,7 @@ static int parse_line(char *line, char **key, char **value)
     return 1;
 }
 
-static unsigned parse_show(char *s, filter_logfunc_t log, void *ld)
+static unsigned parse_show(char *s, cf_logfunc_t log, void *ld)
 {
     unsigned info = 0;
     char *tok;
@@ -162,7 +162,7 @@ static unsigned parse_show(char *s, filter_logfunc_t log, void *ld)
         else if (!strcasecmp(tok, "time-at-processing"))
             info |= INFO_TIME_AT_PROCESSING;
         else if (log)
-            log(ld, FILTER_LOGLEVEL_ERROR, "bannertopdf: error: unknown value for 'Show': %s\n", tok);
+            log(ld, CF_LOGLEVEL_ERROR, "cfFilterBannerToPDF: error: unknown value for 'Show': %s\n", tok);
     }
     return info;
 }
@@ -180,9 +180,9 @@ static char *template_path(const char *name, const char *datadir)
     return result;
 }
 
-banner_t *banner_new_from_file(const char *filename, int *num_options,
+static banner_t *banner_new_from_file(const char *filename, int *num_options,
 			       cups_option_t **options, const char *datadir,
-			       filter_logfunc_t log, void *ld)
+			       cf_logfunc_t log, void *ld)
 {
     FILE *f;
     char *line = NULL;
@@ -195,8 +195,8 @@ banner_t *banner_new_from_file(const char *filename, int *num_options,
     if (!(f = fopen(filename, "r")))
     {
       if (log)
-	log(ld, FILTER_LOGLEVEL_ERROR,
-	    "bannertopdf: Error opening temporary file with input stream");
+	log(ld, CF_LOGLEVEL_ERROR,
+	    "cfFilterBannerToPDF: Error opening temporary file with input stream");
       goto out;
     }
 
@@ -209,8 +209,8 @@ banner_t *banner_new_from_file(const char *filename, int *num_options,
       if (bytes_read == -1)
       {
 	if (log)
-	  log(ld, FILTER_LOGLEVEL_ERROR,
-	      "bannertopdf: No banner instructions found in input stream");
+	  log(ld, CF_LOGLEVEL_ERROR,
+	      "cfFilterBannerToPDF: No banner instructions found in input stream");
 	goto out;
       }
 
@@ -240,8 +240,8 @@ banner_t *banner_new_from_file(const char *filename, int *num_options,
 	    if (ispdf)
 	      break;
             if (log)
-                log(ld, FILTER_LOGLEVEL_ERROR,
-		    "bannertopdf: Line %d is missing a value", linenr);
+                log(ld, CF_LOGLEVEL_ERROR,
+		    "cfFilterBannerToPDF: Line %d is missing a value", linenr);
             continue;
         }
 
@@ -274,8 +274,8 @@ banner_t *banner_new_from_file(const char *filename, int *num_options,
                  !strcasecmp(key, "notice"))
         {
             if (log)
-                log(ld, FILTER_LOGLEVEL_ERROR,
-                    "bannertopdf: Note: %d: bannertopdf does not support '%s'",
+                log(ld, CF_LOGLEVEL_ERROR,
+                    "cfFilterBannerToPDF: Note: %d: bannertopdf does not support '%s'",
                     linenr, key);
         }
         else
@@ -283,8 +283,8 @@ banner_t *banner_new_from_file(const char *filename, int *num_options,
 	    if (ispdf)
 	      break;
             if (log)
-                log(ld, FILTER_LOGLEVEL_ERROR,
-                    "bannertopdf: Error: %d: unknown keyword '%s'",
+                log(ld, CF_LOGLEVEL_ERROR,
+                    "cfFilterBannerToPDF: Error: %d: unknown keyword '%s'",
                     linenr, key);
         }
     }
@@ -329,7 +329,7 @@ static int get_int_option(const char *name,
     return value ? atoi(value) : def;
 }
 
-static void get_pagesize(filter_data_t *data,
+static void get_pagesize(cf_filter_data_t *data,
                          int noptions,
                          cups_option_t *options,
                          float *width,
@@ -530,7 +530,7 @@ static const char *human_time(const char *timestamp)
 /*
  * Add new key & value.
  */
-static opt_t *add_opt(opt_t *in_opt, const char *key, const char *val)
+static cf_opt_t *add_opt(cf_opt_t *in_opt, const char *key, const char *val)
 {
     if (!key || !val)
     {
@@ -542,7 +542,7 @@ static opt_t *add_opt(opt_t *in_opt, const char *key, const char *val)
         return in_opt;
     }
 
-    opt_t *entry = malloc(sizeof(opt_t));
+    cf_opt_t *entry = malloc(sizeof(cf_opt_t));
     if (!entry)
     {
         return in_opt;
@@ -561,8 +561,8 @@ static opt_t *add_opt(opt_t *in_opt, const char *key, const char *val)
  *
  * Create PDF form's field names according above.
  */
-opt_t *get_known_opts(
-    filter_data_t *data,
+static cf_opt_t *get_known_opts(
+    cf_filter_data_t *data,
     const char *jobid,
     const char *user,
     const char *jobtitle,
@@ -573,7 +573,7 @@ opt_t *get_known_opts(
 
     ppd_file_t *ppd = data->ppd;
     ppd_attr_t *attr;
-    opt_t *opt = NULL;
+    cf_opt_t *opt = NULL;
     ipp_t *printer_attrs = data->printer_attrs;
     ipp_attribute_t *ipp_attr;
     char buf[1024];
@@ -717,20 +717,20 @@ opt_t *get_known_opts(
 }
 
 static int generate_banner_pdf(banner_t *banner,
-                               filter_data_t *data,
+                               cf_filter_data_t *data,
                                const char *jobid,
                                const char *user,
                                const char *jobtitle,
                                int noptions,
                                cups_option_t *options,
-                               filter_logfunc_t log,
+                               cf_logfunc_t log,
                                void *ld,
                                FILE *outputfp)
 {
     char *buf;
     size_t len;
     FILE *s;
-    pdf_t *doc;
+    cf_pdf_t *doc;
     float page_width, page_length;
     float media_limits[4];
     float page_scale;
@@ -745,9 +745,9 @@ static int generate_banner_pdf(banner_t *banner,
     struct stat st;
 #endif
 
-    if (!(doc = pdf_load_template(banner->template_file)))
+    if (!(doc = cfPDFLoadTemplate(banner->template_file)))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
 		   "PDF template must exist and contain exactly 1 page: %s",
 		   banner->template_file);
       return (1);
@@ -756,19 +756,19 @@ static int generate_banner_pdf(banner_t *banner,
     get_pagesize(data, noptions, options,
                  &page_width, &page_length, media_limits);
 
-    if (pdf_resize_page(doc, 1, page_width, page_length, &page_scale) != 0)
+    if (cfPDFResizePage(doc, 1, page_width, page_length, &page_scale) != 0)
     {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
 		   "Unable to resize requested PDF page");
-      pdf_free(doc);
+      cfPDFFree(doc);
       return (1);
     }
 
-    if (pdf_add_type1_font(doc, 1, "Courier") != 0)
+    if (cfPDFAddType1Font(doc, 1, "Courier") != 0)
     {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
 		   "Unable to add type1 font to requested PDF page");
-      pdf_free(doc);
+      cfPDFFree(doc);
       return (1);
     }
 
@@ -778,8 +778,8 @@ static int generate_banner_pdf(banner_t *banner,
     if ((s = tmpfile()) == NULL)
     {
         if (log)
-            log(ld, FILTER_LOGLEVEL_ERROR, "bannertopdf: Cannot create temp file: %s\n", strerror(errno));
-	pdf_free(doc);
+            log(ld, CF_LOGLEVEL_ERROR, "cfFilterBannerToPDF: Cannot create temp file: %s\n", strerror(errno));
+	cfPDFFree(doc);
         return 1;
     }
 #endif
@@ -932,14 +932,14 @@ static int generate_banner_pdf(banner_t *banner,
     if (fstat(fileno(s), &st) < 0)
     {
         if (log)
-            log(ld, FILTER_LOGLEVEL_ERROR, "bannertopdf: Cannot fstat(): %s\n", , strerror(errno));
+            log(ld, CF_LOGLEVEL_ERROR, "cfFilterBannerToPDF: Cannot fstat(): %s\n", , strerror(errno));
         return 1;
     }
     fseek(s, 0L, SEEK_SET);
     if ((buf = malloc(st.st_size + 1)) == NULL)
     {
         if (log)
-            log(ld, FILTER_LOGLEVEL_ERROR, "bannertopdf: Cannot malloc(): %s\n", , strerror(errno));
+            log(ld, CF_LOGLEVEL_ERROR, "cfFilterBannerToPDF: Cannot malloc(): %s\n", , strerror(errno));
         return 1;
     }
     size_t nbytes = fread(buf, 1, st.st_size, s);
@@ -948,7 +948,7 @@ static int generate_banner_pdf(banner_t *banner,
 #endif /* !HAVE_OPEN_MEMSTREAM */
     fclose(s);
 
-    opt_t *known_opts = get_known_opts(data,
+    cf_opt_t *known_opts = get_known_opts(data,
                                        jobid,
                                        user,
                                        jobtitle,
@@ -959,15 +959,15 @@ static int generate_banner_pdf(banner_t *banner,
     * Try to find a PDF form in PDF template and fill it.
     */
 
-    if (pdf_fill_form(doc, known_opts) != 0)
+    if (cfPDFFillForm(doc, known_opts) != 0)
     {
      /*
       * Could we fill a PDF form? If no, just add PDF stream.
       */
 
-      if (pdf_prepend_stream(doc, 1, buf, len) != 0)
+      if (cfPDFPrependStream(doc, 1, buf, len) != 0)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
 		     "Unable to prepend stream to requested PDF page");
       }
     }
@@ -979,17 +979,17 @@ static int generate_banner_pdf(banner_t *banner,
 
     if (copies > 1)
     {
-      if (pdf_duplicate_page(doc, 1, copies - 1) != 0)
+      if (cfPDFDuplicatePage(doc, 1, copies - 1) != 0)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
 		     "Unable to duplicate requested PDF page");
       }
     }
 
-    pdf_write(doc, outputfp);
+    cfPDFWrite(doc, outputfp);
 
-    opt_t *opt_current = known_opts;
-    opt_t *opt_next = NULL;
+    cf_opt_t *opt_current = known_opts;
+    cf_opt_t *opt_next = NULL;
     while (opt_current != NULL)
     {
         opt_next = opt_current->next;
@@ -998,20 +998,19 @@ static int generate_banner_pdf(banner_t *banner,
     }
 
     free(buf);
-    pdf_free(doc);
+    cfPDFFree(doc);
     return 0;
 }
 
-int bannertopdf(int inputfd,         /* I - File descriptor input stream */
+int cfFilterBannerToPDF(int inputfd,         /* I - File descriptor input stream */
                 int outputfd,        /* I - File descriptor output stream */
                 int inputseekable,   /* I - Is input stream seekable? (unused)*/
-                filter_data_t *data, /* I - Job and printer data */
+                cf_filter_data_t *data, /* I - Job and printer data */
                 void *parameters)    /* I - Filter-specific parameters -
 				            Template/Banner data directory */
 {
     banner_t *banner;
     int num_options = 0;
-    ppd_file_t *ppd = NULL;
     int ret;
     FILE *inputfp;
     FILE *outputfp;
@@ -1021,13 +1020,13 @@ int bannertopdf(int inputfd,         /* I - File descriptor input stream */
     size_t bytes;
     const char *datadir = (const char *)parameters;
 
-    filter_logfunc_t log = data->logfunc;
+    cf_logfunc_t log = data->logfunc;
     void *ld = data->logdata;
-    filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
+    cf_filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
     void *icd = data->iscanceleddata;
     char jobid[50];
 
-    num_options = joinJobOptionsAndAttrs(data, num_options, &options);
+    num_options = cfJoinJobOptionsAndAttrs(data, num_options, &options);
 
    /*
     * Open the input data stream specified by the inputfd...
@@ -1038,8 +1037,8 @@ int bannertopdf(int inputfd,         /* I - File descriptor input stream */
         if (!iscanceled || !iscanceled(icd))
         {
             if (log)
-                log(ld, FILTER_LOGLEVEL_DEBUG,
-                    "bannertopdf: Unable to open input data stream.");
+                log(ld, CF_LOGLEVEL_DEBUG,
+                    "cfFilterBannerToPDF: Unable to open input data stream.");
         }
         return (1);
     }
@@ -1050,14 +1049,14 @@ int bannertopdf(int inputfd,         /* I - File descriptor input stream */
 
     if ((tempfd = cupsTempFd(tempfile, sizeof(tempfile))) < 0)
     {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "bannertopdf: Unable to copy input file: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterBannerToPDF: Unable to copy input file: %s",
 		   strerror(errno));
       return (1);
     }
 
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "bannertopdf: Copying input to temp file \"%s\"",
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterBannerToPDF: Copying input to temp file \"%s\"",
 		 tempfile);
 
     while ((bytes = fread(buffer, 1, sizeof(buffer), inputfp)) > 0)
@@ -1079,24 +1078,12 @@ int bannertopdf(int inputfd,         /* I - File descriptor input stream */
         if (!iscanceled || !iscanceled(icd))
         {
             if (log)
-                log(ld, FILTER_LOGLEVEL_DEBUG,
-                    "bannertopdf: Unable to open output data stream.");
+                log(ld, CF_LOGLEVEL_DEBUG,
+                    "cfFilterBannerToPDF: Unable to open output data stream.");
         }
 
         fclose(inputfp);
         return (1);
-    }
-
-    if (data->ppd)
-        ppd = data->ppd;
-    else if (data->ppdfile)
-        ppd = ppdOpenFile(data->ppdfile);
-
-
-    if (!ppd)
-    {
-        if (log)
-            log(ld, FILTER_LOGLEVEL_DEBUG, "bannertopdf: Could not open PPD file '%s'", ppd);
     }
 
    /*
@@ -1108,7 +1095,7 @@ int bannertopdf(int inputfd,         /* I - File descriptor input stream */
     if (!banner)
     {
         if (log)
-            log(ld, FILTER_LOGLEVEL_ERROR, "bannertopdf: Could not read banner file");
+            log(ld, CF_LOGLEVEL_ERROR, "cfFilterBannerToPDF: Could not read banner file");
         return 1;
     }
 

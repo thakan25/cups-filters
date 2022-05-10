@@ -1388,21 +1388,11 @@ cfGenerateSizes(ipp_t *response,
  * attributes-natural-language attribute and then request an appropriate
  * language version of the files if available. The printer-specific
  * strings are downloaded from the printer following the URI in the
- * printer-strings-uri attribute and are in the slected language.
+ * printer-strings-uri attribute and are in the selected language.
  *
- * There are no human-readable strings in these files for the non-IPP
- * choices of the print color mode, for 16 bit color depth, Adobe RGB,
- * and "device" modes as advertised for Apple Raster (urf-supported)
- * and PWG Raster (pwg-raster-document-type-supported). These color
- * spaces are supposed to not be selected manually by the user but the
- * filters should instead detect the color space and depth of the input
- * file and automatically select the best color space and depth for the
- * output to the printer. As the filters do not currently do that we
- * we are allowing the manual selection as a workaround.
- *
- * It is not clear whether these issues (translated PPDs and color space
- * selection) will get fixed in the PPD generator as the need of PPDs
- * in CUPS can go away soon.
+ * It is not clear whether PPD translation will get fixed in the PPD
+ * generator as the need of PPDs in CUPS will go away with version
+ * 3.x.
  *
  * See also:
  *
@@ -1530,11 +1520,7 @@ cfCreatePPDFromIPP2(char         *buffer,          /* I - Filename buffer */
   const char		*keyword;	/* Keyword value */
   cups_array_t		*fin_options = NULL;
 					/* Finishing options */
-  char			buf[256],
-                        filter_path[1024];
-                                        /* Path to filter executable */
-  const char		*cups_serverbin;/* CUPS_SERVERBIN environment
-					   variable */
+  char			buf[256];
   char			*defaultoutbin = NULL;
   const char		*outbin;
   char			outbin_properties[1024];
@@ -1981,17 +1967,9 @@ cfCreatePPDFromIPP2(char         *buffer,          /* I - Filename buffer */
   /* Legacy formats only if we have no driverless format */
   else if (cupsArrayFind(pdl_list, "application/vnd.hp-pclxl"))
   {
-    /* Check whether the gstopxl filter is installed,
-       otherwise ignore the PCL-XL support of the printer */
-    if ((cups_serverbin = getenv("CUPS_SERVERBIN")) == NULL)
-      cups_serverbin = CUPS_SERVERBIN;
-    snprintf(filter_path, sizeof(filter_path), "%s/filter/gstopxl",
-	     cups_serverbin);
-    if (access(filter_path, X_OK) == 0) {
-      cupsFilePrintf(fp, "*cupsFilter2: \"application/vnd.cups-pdf application/vnd.hp-pclxl 100 gstopxl\"\n");
-      if (formatfound == 0) manual_copies = 1;
-      formatfound = 1;
-    }
+    cupsFilePrintf(fp, "*cupsFilter2: \"application/vnd.cups-pdf application/vnd.hp-pclxl 100 gstopxl\"\n");
+    if (formatfound == 0) manual_copies = 1;
+    formatfound = 1;
   }
   else if (cupsArrayFind(pdl_list, "application/postscript"))
   {

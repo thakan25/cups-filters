@@ -764,10 +764,10 @@ int main(int argc, char** argv)
     int havefilter, havegstoraster;
     dstr_t *filelist;
     list_t * arglist;
-    filter_data_t temp;
-    filter_data_t *data = &temp;
+    cf_filter_data_t temp;
+    cf_filter_data_t *data = &temp;
     data->logdata = NULL;
-    data->logfunc = cups_logfunc;
+    data->logfunc = cfCUPSLogFunc;
     arglist = list_create_from_array(argc -1, (void**)&argv[1]);
 
     if (argc == 2 && (arglist_find(arglist, "--version") || arglist_find(arglist, "--help") ||
@@ -852,16 +852,14 @@ int main(int argc, char** argv)
         if (strlen(getenv("PPD")) > 2047)
           job->ppdfile[2047] = '\0';
         spooler = SPOOLER_CUPS;
-    if (getenv("CUPS_SERVERBIN")) {
-        strncpy(cupsfilterpath, getenv("CUPS_SERVERBIN"),
-		sizeof(cupsfilterpath) - 1);
-        if (strlen(getenv("CUPS_SERVERBIN")) > PATH_MAX-1)
-          cupsfilterpath[PATH_MAX-1] = '\0';
+	strncpy_omit(job->printer, getenv("PRINTER"), 256, omit_shellescapes);
+	if (getenv("CUPS_SERVERBIN")) {
+	     strncpy(cupsfilterpath, getenv("CUPS_SERVERBIN"),
+		     sizeof(cupsfilterpath) - 1);
+	     if (strlen(getenv("CUPS_SERVERBIN")) > PATH_MAX-1)
+	       cupsfilterpath[PATH_MAX-1] = '\0';
         }
     }
-
-    /* Check status of printer color management from the color manager */
-    cm_disabled = cmIsPrinterCmDisabled(data, getenv("PRINTER"));
 
     /* CUPS calls foomatic-rip only with 5 or 6 positional parameters,
        not with named options, like for example "-p <string>". */
@@ -915,6 +913,10 @@ int main(int argc, char** argv)
         }
 
     }
+
+    /* Check status of printer color management from the color manager */
+    data->printer = job->printer;
+    cm_disabled = cfCmIsPrinterCmDisabled(data);
 
     _log("'CM Color Calibration' Mode in SPOOLER-LESS: %s\n", cm_calibrate ? 
          "Activated" : "Off");
@@ -1040,8 +1042,7 @@ int main(int argc, char** argv)
                   _log("INFO: Using qualifer: '%s.%s.%s'\n",
                         qualifier[0], qualifier[1], qualifier[2]);
 
-                  cmGetPrinterIccProfile(data, getenv("PRINTER"),
-					 (char **)&icc_profile, 0);
+                  cfCmGetPrinterIccProfile(data, (char **)&icc_profile, 0);
 
                   /* fall back to PPD */
                   if (icc_profile == NULL) {

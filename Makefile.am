@@ -29,8 +29,6 @@ EXTRA_DIST = \
 	filter/braille/filters/TODO.txt
 
 EXTRA_DIST += \
-	cupsfilters/kmdevices.cpp \
-	cupsfilters/kmdevices.h \
 	cupsfilters/testdriver.c \
 	data/makePDFfromPS.sh \
 	data/classified.ps \
@@ -335,6 +333,7 @@ pkgfontembedincludedir = $(includedir)/fontembed
 pkgfontembedinclude_DATA = \
 	fontembed/bitset.h \
 	fontembed/embed.h \
+	fontembed/embed-pdf.h \
 	fontembed/fontfile.h \
 	fontembed/iofn.h \
 	fontembed/sfnt.h
@@ -342,47 +341,42 @@ pkgfontembedinclude_DATA = \
 lib_LTLIBRARIES += libfontembed.la
 
 check_PROGRAMS += \
-	test_analyze \
-	test_pdf \
-	test_ps
+	test-analyze \
+	test-pdf \
+	test-ps
 TESTS += \
-	test_analyze \
-	test_pdf \
-	test_ps
+	test-analyze \
+	test-pdf \
+	test-ps
 
 libfontembed_la_SOURCES = \
 	fontembed/aglfn13.c \
-	fontembed/bitset.h \
 	fontembed/dynstring.c \
-	fontembed/dynstring.h \
+	fontembed/dynstring-private.h \
 	fontembed/embed.c \
-	fontembed/embed.h \
-	fontembed/embed_sfnt.c \
-	fontembed/embed_sfnt_int.h \
-	fontembed/embed_pdf.c \
-	fontembed/embed_pdf.h \
-	fontembed/embed_pdf_int.h \
+	fontembed/embed-sfnt.c \
+	fontembed/embed-sfnt-int-private.h \
+	fontembed/embed-pdf.c \
+	fontembed/embed-pdf-int-private.h \
 	fontembed/fontfile.c \
-	fontembed/fontfile.h \
 	fontembed/frequent.c \
-	fontembed/frequent.h \
-	fontembed/iofn.h \
-	fontembed/macroman.h \
+	fontembed/frequent-private.h \
+	fontembed/macroman-private.h \
 	fontembed/sfnt.c \
-	fontembed/sfnt.h \
-	fontembed/sfnt_int.h \
-	fontembed/sfnt_subset.c
+	fontembed/sfnt-int-private.h \
+	fontembed/sfnt-subset.c \
+	$(pkgfontembedinclude_DATA)
 libfontembed_la_LDFLAGS = \
 	-no-undefined \
 	-version-info 1
 
-test_analyze_SOURCES = fontembed/test_analyze.c
+test_analyze_SOURCES = fontembed/test-analyze.c
 test_analyze_LDADD = libfontembed.la
 
-test_pdf_SOURCES = fontembed/test_pdf.c
+test_pdf_SOURCES = fontembed/test-pdf.c
 test_pdf_LDADD = libfontembed.la
 
-test_ps_SOURCES = fontembed/test_ps.c
+test_ps_SOURCES = fontembed/test-ps.c
 test_ps_LDADD = libfontembed.la
 
 EXTRA_DIST += \
@@ -461,51 +455,48 @@ libcupsfilters_la_SOURCES = \
 	cupsfilters/image-pnm.c \
 	cupsfilters/image-private.h \
 	cupsfilters/image-sgi.c \
-	cupsfilters/image-sgi.h \
-	cupsfilters/image-sgilib.c \
 	cupsfilters/image-sun.c \
 	cupsfilters/image-tiff.c \
 	cupsfilters/image-zoom.c \
 	cupsfilters/imagetopdf.c \
-	cupsfilters/imagetops.c \
 	cupsfilters/imagetoraster.c \
 	cupsfilters/ipp.c \
 	cupsfilters/lut.c \
-	cupsfilters/mupdftoraster.c \
+	cupsfilters/mupdftopwg.c \
 	cupsfilters/pack.c \
 	cupsfilters/pclmtoraster.cxx \
 	cupsfilters/pdf.cxx \
-	cupsfilters/pdftopdf/pdftopdf.cc \
-	cupsfilters/pdftopdf/pdftopdf.h \
-	cupsfilters/pdftopdf/pdftopdf_jcl.cc \
-	cupsfilters/pdftopdf/pdftopdf_jcl.h \
-	cupsfilters/pdftopdf/pdftopdf_processor.cc \
-	cupsfilters/pdftopdf/pdftopdf_processor.h \
-	cupsfilters/pdftopdf/qpdf_pdftopdf_processor.cc \
-	cupsfilters/pdftopdf/qpdf_pdftopdf_processor.h \
-	cupsfilters/pdftopdf/pptypes.cc \
-	cupsfilters/pdftopdf/pptypes.h \
-	cupsfilters/pdftopdf/nup.cc \
-	cupsfilters/pdftopdf/nup.h \
-	cupsfilters/pdftopdf/intervalset.cc \
-	cupsfilters/pdftopdf/intervalset.h \
-	cupsfilters/pdftopdf/qpdf_tools.cc \
-	cupsfilters/pdftopdf/qpdf_tools.h \
-	cupsfilters/pdftopdf/qpdf_xobject.cc \
-	cupsfilters/pdftopdf/qpdf_xobject.h \
-	cupsfilters/pdftopdf/qpdf_pdftopdf.cc \
-	cupsfilters/pdftopdf/qpdf_pdftopdf.h \
-	cupsfilters/pdftopdf/qpdf_cm.cc \
-	cupsfilters/pdftopdf/qpdf_cm.h \
+	cupsfilters/pdftopdf/pdftopdf.cxx \
+	cupsfilters/pdftopdf/pdftopdf-private.h \
+	cupsfilters/pdftopdf/pdftopdf-jcl.cxx \
+	cupsfilters/pdftopdf/pdftopdf-jcl-private.h \
+	cupsfilters/pdftopdf/pdftopdf-processor.cxx \
+	cupsfilters/pdftopdf/pdftopdf-processor-private.h \
+	cupsfilters/pdftopdf/qpdf-pdftopdf-processor.cxx \
+	cupsfilters/pdftopdf/qpdf-pdftopdf-processor-private.h \
+	cupsfilters/pdftopdf/pptypes.cxx \
+	cupsfilters/pdftopdf/pptypes-private.h \
+	cupsfilters/pdftopdf/nup.cxx \
+	cupsfilters/pdftopdf/nup-private.h \
+	cupsfilters/pdftopdf/intervalset.cxx \
+	cupsfilters/pdftopdf/intervalset-private.h \
+	cupsfilters/pdftopdf/qpdf-tools.cxx \
+	cupsfilters/pdftopdf/qpdf-tools-private.h \
+	cupsfilters/pdftopdf/qpdf-xobject.cxx \
+	cupsfilters/pdftopdf/qpdf-xobject-private.h \
+	cupsfilters/pdftopdf/qpdf-pdftopdf.cxx \
+	cupsfilters/pdftopdf/qpdf-pdftopdf-private.h \
+	cupsfilters/pdftopdf/qpdf-cm.cxx \
+	cupsfilters/pdftopdf/qpdf-cm-private.h \
 	cupsfilters/pdftops.c \
 	cupsfilters/pdftoraster.cxx \
 	cupsfilters/pdfutils.c \
 	cupsfilters/ppdgenerator.c \
-	cupsfilters/pstops.c \
+	cupsfilters/imagetops-pstops.c \
 	cupsfilters/pwgtoraster.c \
 	cupsfilters/raster.c \
 	cupsfilters/rastertops.c \
-	cupsfilters/rastertopdf.cpp \
+	cupsfilters/rastertopdf.cxx \
 	cupsfilters/rastertopwg.c \
 	cupsfilters/rgb.c \
 	cupsfilters/srgb.c \
@@ -544,7 +535,7 @@ libcupsfilters_la_CFLAGS = \
 	$(TIFF_CFLAGS)
 libcupsfilters_la_LDFLAGS = \
 	-no-undefined \
-	-version-info 1
+	-version-info 2
 if BUILD_DBUS
 libcupsfilters_la_CFLAGS += $(DBUS_CFLAGS) -DHAVE_DBUS
 libcupsfilters_CXXFLAGS = -std=c++0x $(libcupsfilters_CFLAGS)   # -std=c++11
@@ -866,7 +857,7 @@ pkgfilter_PROGRAMS += \
 endif
 if ENABLE_MUTOOL
 pkgfilter_PROGRAMS += \
-	mupdftoraster
+	mupdftopwg
 endif
 if ENABLE_IMAGEFILTERS
 pkgfilter_PROGRAMS += \
@@ -1035,13 +1026,13 @@ rastertopdf_LDADD = \
 	$(CUPS_LIBS) \
 	libcupsfilters.la
 
-mupdftoraster_SOURCES = \
-	filter/mupdftoraster.c
-mupdftoraster_CFLAGS = \
+mupdftopwg_SOURCES = \
+	filter/mupdftopwg.c
+mupdftopwg_CFLAGS = \
 	$(CUPS_CFLAGS) \
 	-I$(srcdir)/cupsfilters/ \
 	-I$(srcdir)/ppd/
-mupdftoraster_LDADD = \
+mupdftopwg_LDADD = \
 	$(CUPS_LIBS) \
 	libcupsfilters.la \
 	libppd.la

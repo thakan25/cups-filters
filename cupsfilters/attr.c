@@ -11,7 +11,7 @@
  *
  * Contents:
  *
- *   cupsFindAttr() - Find a PPD attribute based on the colormodel,
+ *   cfFindAttr() - Find a PPD attribute based on the colormodel,
  *                    media, and resolution.
  */
 
@@ -26,19 +26,19 @@
 
 
 /*
- * 'cupsFindAttr()' - Find a PPD attribute based on the colormodel,
+ * 'cfFindAttr()' - Find a PPD attribute based on the colormodel,
  *                    media, and resolution.
  */
 
 ppd_attr_t *				/* O - Matching attribute or NULL */
-cupsFindAttr(ppd_file_t *ppd,		/* I - PPD file */
+cfFindAttr(ppd_file_t *ppd,		/* I - PPD file */
              const char *name,		/* I - Attribute name */
              const char *colormodel,	/* I - Color model */
              const char *media,		/* I - Media type */
              const char *resolution,	/* I - Resolution */
 	     char       *spec,		/* O - Final selection string */
 	     int        specsize,	/* I - Size of string buffer */
-	     filter_logfunc_t log,      /* I - Log function */
+	     cf_logfunc_t log,      /* I - Log function */
 	     void       *ld)            /* I - Log function data */
 {
   ppd_attr_t	*attr;			/* Attribute */
@@ -65,48 +65,48 @@ cupsFindAttr(ppd_file_t *ppd,		/* I - PPD file */
   */
 
   snprintf(spec, specsize, "%s.%s.%s", colormodel, media, resolution);
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
 	       "Looking for \"*%s %s\"...", name, spec);
   if ((attr = ppdFindAttr(ppd, name, spec)) != NULL && attr->value != NULL)
     return (attr);
 
   snprintf(spec, specsize, "%s.%s", colormodel, resolution);
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
 	       "Looking for \"*%s %s\"...", name, spec);
   if ((attr = ppdFindAttr(ppd, name, spec)) != NULL && attr->value != NULL)
     return (attr);
 
   snprintf(spec, specsize, "%s", colormodel);
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
 	       "Looking for \"*%s %s\"...", name, spec);
   if ((attr = ppdFindAttr(ppd, name, spec)) != NULL && attr->value != NULL)
     return (attr);
 
   snprintf(spec, specsize, "%s.%s", media, resolution);
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
 	       "Looking for \"*%s %s\"...", name, spec);
   if ((attr = ppdFindAttr(ppd, name, spec)) != NULL && attr->value != NULL)
     return (attr);
 
   snprintf(spec, specsize, "%s", media);
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
 	       "Looking for \"*%s %s\"...", name, spec);
   if ((attr = ppdFindAttr(ppd, name, spec)) != NULL && attr->value != NULL)
     return (attr);
 
   snprintf(spec, specsize, "%s", resolution);
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
 	       "Looking for \"*%s %s\"...", name, spec);
   if ((attr = ppdFindAttr(ppd, name, spec)) != NULL && attr->value != NULL)
     return (attr);
 
   spec[0] = '\0';
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
 	       "Looking for \"*%s\"...", name);
   if ((attr = ppdFindAttr(ppd, name, spec)) != NULL && attr->value != NULL)
     return (attr);
 
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
 	       "No instance of \"*%s\" found...", name);
 
   return (NULL);

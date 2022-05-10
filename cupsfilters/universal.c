@@ -1,5 +1,5 @@
+#include "config.h"
 #include "filter.h"
-#include <config.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -15,10 +15,10 @@
 #include <ppd/ppd.h>
 
 int                            /* O - Error status */
-universal(int inputfd,         /* I - File descriptor input stream */
+cfFilterUniversal(int inputfd,         /* I - File descriptor input stream */
 	  int outputfd,        /* I - File descriptor output stream */
 	  int inputseekable,   /* I - Is input stream seekable? */
-	  filter_data_t *data, /* I - Job and printer data */
+	  cf_filter_data_t *data, /* I - Job and printer data */
 	  void *parameters)    /* I - Filter-specific parameters
 				      (input/output format) */
 {
@@ -29,27 +29,33 @@ universal(int inputfd,         /* I - File descriptor input stream */
   char input_type[256];
   char output_super[16];
   char output_type[256];
-  filter_out_format_t *outformat;
-  filter_filter_in_chain_t *filter, *next;
-  filter_input_output_format_t input_output_format;
+  cf_filter_out_format_t *outformat;
+  cf_filter_filter_in_chain_t *filter, *next;
+  cf_filter_universal_parameter_t universal_parameters;
   ppd_file_t *ppd;
   ppd_cache_t *cache;
-  filter_logfunc_t log = data->logfunc;
+  cf_logfunc_t log = data->logfunc;
   void *ld = data->logdata;
   int ret = 0;
 
-  input_output_format = *(filter_input_output_format_t *)parameters;
-  input = input_output_format.input_format;
-  final_output = input_output_format.output_format;
+  universal_parameters = *(cf_filter_universal_parameter_t *)parameters;
+  input = universal_parameters.input_format;
+  if (input == NULL)
+  {
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterUniversal: No input data format supplied.");
+    return (1);
+  }
+  final_output = universal_parameters.output_format;
+  if (final_output == NULL)
+  {
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterUniversal: No output data format supplied.");
+    return (1);
+  }
   strncpy(output, final_output, sizeof(output) - 1);
 
-  /* If we have a PPD, load it and its cache, so that we can access the
-     "*cupsFilter(2): ..." lines */
-  if (data->ppd == NULL && data->ppdfile)
-    data->ppd = ppdOpenFile(data->ppdfile);
   ppd = data->ppd;
-  if (ppd && !ppd->cache)
-    ppd->cache = ppdCacheCreateWithPPD(ppd);
   cache = ppd ? ppd->cache : NULL;
 
   /* Check whether our output format (under CUPS it is taken from the
@@ -79,8 +85,8 @@ universal(int inputfd,         /* I - File descriptor input stream */
     int lowest_cost = INT_MAX;
     char *filter;
 
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "universal: \"*cupsFilter(2): ...\" lines in the PPD file:");
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterUniversal: \"*cupsFilter(2): ...\" lines in the PPD file:");
 
     for (filter = (char *)cupsArrayFirst(cache->filters);
 	 filter;
@@ -93,8 +99,8 @@ universal(int inputfd,         /* I - File descriptor input stream */
 	   *coststr = NULL;
       int cost;
 
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "universal:    %s", filter);
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterUniversal:    %s", filter);
 
       /* String of the "*cupsfilter:" or "*cupsfilter2:" line */
       strncpy(buf, filter, sizeof(buf) - 1);
@@ -139,8 +145,8 @@ universal(int inputfd,         /* I - File descriptor input stream */
 	   strcasecmp(in, "application/PCLm") == 0 ||
 	   strcasecmp(in, "application/postscript") == 0))
       {
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "universal:       --> Selecting this line");
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterUniversal:       --> Selecting this line");
 	/* Take the input format of the line as output format for us */
 	strncpy(output, in, sizeof(output));
 	/* Update the minimum cost found */
@@ -148,8 +154,8 @@ universal(int inputfd,         /* I - File descriptor input stream */
 	/* We cannot find a "better" solution ... */
 	if (lowest_cost == 0)
 	{
-	  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		       "universal:    Cost value is down to zero, stopping reading further lines");
+	  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		       "cfFilterUniversal:    Cost value is down to zero, stopping reading further lines");
 	  break;
 	}
       }
@@ -159,12 +165,12 @@ universal(int inputfd,         /* I - File descriptor input stream */
     error:
       if (lowest_cost == INT_MAX && coststr)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "universal: PPD uses \"*cupsFilter: ...\" lines, so we always convert to format given by FINAL_CONTENT_TYPE");
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterUniversal: PPD uses \"*cupsFilter: ...\" lines, so we always convert to format given by FINAL_CONTENT_TYPE");
 	break;
       }
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "universal: Invalid \"*cupsFilter2: ...\" line in PPD: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterUniversal: Invalid \"*cupsFilter2: ...\" line in PPD: %s",
 		   filter);
     }
 
@@ -172,14 +178,14 @@ universal(int inputfd,         /* I - File descriptor input stream */
 
   if (strcasecmp(output, final_output) != 0)
   {
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "universal: Converting from %s to %s, final output will be %s",
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterUniversal: Converting from %s to %s, final output will be %s",
 		 input, output, final_output);
   }
   else
   {
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "universal: Converting from %s to %s", input, output);
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterUniversal: Converting from %s to %s", input, output);
   }
 
   sscanf(input, "%15[^/]/%255s", input_super, input_type);
@@ -196,196 +202,161 @@ universal(int inputfd,         /* I - File descriptor input stream */
 	!strcmp(output_type, "pwg-raster") ||
 	!strcmp(output_type, "PCLm"))
     {
-      outformat = malloc(sizeof(filter_out_format_t));
-      *outformat = OUTPUT_FORMAT_CUPS_RASTER;
+      outformat = malloc(sizeof(cf_filter_out_format_t));
+      *outformat = CF_FILTER_OUT_FORMAT_CUPS_RASTER;
       if (!strcmp(output_type, "pwg-raster") ||
 	  (!strcmp(output_type, "vnd.cups-raster") &&
 	   !strcmp(final_output, "image/pwg-raster")))
-	*outformat = OUTPUT_FORMAT_PWG_RASTER;
+	*outformat = CF_FILTER_OUT_FORMAT_PWG_RASTER;
       else if (!strcmp(output_type, "urf") ||
 	       (!strcmp(output_type, "vnd.cups-raster") &&
 		!strcmp(final_output, "image/urf")))
-	*outformat = OUTPUT_FORMAT_APPLE_RASTER;
+	*outformat = CF_FILTER_OUT_FORMAT_APPLE_RASTER;
       else if (!strcmp(output_type, "PCLm") ||
 	       (!strcmp(output_type, "vnd.cups-raster") &&
 		!strcmp(final_output, "applicationn/PCLm")))
-	*outformat = OUTPUT_FORMAT_PCLM;
-      filter = malloc(sizeof(filter_filter_in_chain_t));
-      filter->function = imagetoraster;
+	*outformat = CF_FILTER_OUT_FORMAT_PCLM;
+      filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+      filter->function = cfFilterImageToRaster;
       filter->parameters = outformat;
       filter->name = "imagetoraster";
       cupsArrayAdd(filter_chain, filter);
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "universal: Adding %s to chain", filter->name);
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterUniversal: Adding %s to chain", filter->name);
 
       if (!strcmp(output, "image/pwg-raster"))
       {
-	filter = malloc(sizeof(filter_filter_in_chain_t));
-	outformat = malloc(sizeof(filter_out_format_t));
-	*outformat = OUTPUT_FORMAT_PWG_RASTER;
-	filter->function = rastertopwg;
+	filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+	outformat = malloc(sizeof(cf_filter_out_format_t));
+	*outformat = CF_FILTER_OUT_FORMAT_PWG_RASTER;
+	filter->function = cfFilterRasterToPWG;
 	filter->parameters = outformat;
 	filter->name = "rastertopwg";
 	cupsArrayAdd(filter_chain, filter);
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "universal: Adding %s to chain", filter->name);
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterUniversal: Adding %s to chain", filter->name);
       }
       else if (!strcmp(output, "application/PCLm"))
       {
-	outformat = malloc(sizeof(filter_out_format_t));
-	*outformat = OUTPUT_FORMAT_PCLM;
-	filter = malloc(sizeof(filter_filter_in_chain_t));
-	filter->function = rastertopdf;
+	outformat = malloc(sizeof(cf_filter_out_format_t));
+	*outformat = CF_FILTER_OUT_FORMAT_PCLM;
+	filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+	filter->function = cfFilterRasterToPDF;
 	filter->parameters = outformat;
 	filter->name = "rastertopclm";
 	cupsArrayAdd(filter_chain, filter);
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "universal: Adding %s to chain", filter->name);
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterUniversal: Adding %s to chain", filter->name);
       }
       else if (!strcmp(output, "image/urf"))
       {
-	filter = malloc(sizeof(filter_filter_in_chain_t));
-	outformat = malloc(sizeof(filter_out_format_t));
-	*outformat = OUTPUT_FORMAT_APPLE_RASTER;
-	filter->function = rastertopwg;
+	filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+	outformat = malloc(sizeof(cf_filter_out_format_t));
+	*outformat = CF_FILTER_OUT_FORMAT_APPLE_RASTER;
+	filter->function = cfFilterRasterToPWG;
 	filter->parameters = outformat;
 	filter->name = "rastertopwg";
 	cupsArrayAdd(filter_chain, filter);
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "universal: Adding %s to chain", filter->name);
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterUniversal: Adding %s to chain", filter->name);
       }
     }
     else
     {
-      filter = malloc(sizeof(filter_filter_in_chain_t));
-      filter->function = imagetopdf;
+      filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+      filter->function = cfFilterImageToPDF;
       filter->parameters = NULL;
       filter->name = "imagetopdf";
       cupsArrayAdd(filter_chain, filter);
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "universal: Adding %s to chain", filter->name);
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterUniversal: Adding %s to chain", filter->name);
     }
   }
   else
   {
     if (!strcmp(input, "application/postscript"))
     {
-      outformat = malloc(sizeof(filter_out_format_t));
-      *outformat = OUTPUT_FORMAT_PDF;
-      filter = malloc(sizeof(filter_filter_in_chain_t));
-      filter->function = ghostscript;
+      outformat = malloc(sizeof(cf_filter_out_format_t));
+      *outformat = CF_FILTER_OUT_FORMAT_PDF;
+      filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+      filter->function = cfFilterGhostscript;
       filter->parameters = outformat;
       filter->name = "ghostscript";
       cupsArrayAdd(filter_chain, filter);
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "universal: Adding %s to chain", filter->name);
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterUniversal: Adding %s to chain", filter->name);
     }
     else if (!strcmp(input_super, "text") ||
 	     (!strcmp(input_super, "application") && input_type[0] == 'x'))
     {
-      filter = malloc(sizeof(filter_filter_in_chain_t));
-      texttopdf_parameter_t* parameters =
-	(texttopdf_parameter_t *) malloc(sizeof(texttopdf_parameter_t));
-      char *p;
-      if ((p = getenv("CUPS_DATADIR")) != NULL)
-	parameters->data_dir = p;
-      else
-	parameters->data_dir = CUPS_DATADIR;
-
-      if ((p = getenv("CHARSET")) != NULL)
-	parameters->char_set = p;
-      else
-	parameters->char_set = NULL;
-
-      if ((p = getenv("CONTENT_TYPE")) != NULL)
-	parameters->content_type = p;
-      else
-	parameters->content_type = NULL;
-
-      if ((p = getenv("CLASSIFICATION")) != NULL)
-	parameters->classification = p;
-      else
-	parameters->classification = NULL;
-
-      filter->function = texttopdf;
+      filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+      cf_filter_texttopdf_parameter_t* parameters =
+	(cf_filter_texttopdf_parameter_t *) malloc(sizeof(cf_filter_texttopdf_parameter_t));
+      *parameters = universal_parameters.texttopdf_params;
+      filter->function = cfFilterTextToPDF;
       filter->parameters = parameters;
       filter->name = "texttopdf";
       cupsArrayAdd(filter_chain, filter);
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "universal: Adding %s to chain",
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterUniversal: Adding %s to chain",
 		   filter->name);
     }
     else if (!strcmp(input, "image/urf") ||
 	     !strcmp(input, "image/pwg-raster") ||
 	     !strcmp(input, "application/vnd.cups-raster"))
     {
-      outformat = malloc(sizeof(filter_out_format_t));
-      *outformat = OUTPUT_FORMAT_PDF;
-      filter = malloc(sizeof(filter_filter_in_chain_t));
-      filter->function = rastertopdf;
+      outformat = malloc(sizeof(cf_filter_out_format_t));
+      *outformat = CF_FILTER_OUT_FORMAT_PDF;
+      filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+      filter->function = cfFilterRasterToPDF;
       filter->parameters = outformat;
       filter->name = "rastertopdf";
       cupsArrayAdd(filter_chain, filter);
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "universal: Adding %s to chain", filter->name);
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterUniversal: Adding %s to chain", filter->name);
     }
     else if (!strcmp(input_type, "vnd.adobe-reader-postscript"))
     {
-      outformat = malloc(sizeof(filter_out_format_t));
-      *outformat = OUTPUT_FORMAT_CUPS_RASTER;
+      outformat = malloc(sizeof(cf_filter_out_format_t));
+      *outformat = CF_FILTER_OUT_FORMAT_CUPS_RASTER;
       if (!strcmp(output_type, "pwg-raster"))
-	*outformat = OUTPUT_FORMAT_PWG_RASTER;
-      else if(!strcmp(output_type, "urf") ||
-	      (!strcmp(output_type, "vnd.cups-raster") &&
-	       !strcmp(final_output, "image/urf")))
-	*outformat = OUTPUT_FORMAT_APPLE_RASTER;
+	*outformat = CF_FILTER_OUT_FORMAT_PWG_RASTER;
+      else if(!strcmp(output_type, "urf"))
+	*outformat = CF_FILTER_OUT_FORMAT_APPLE_RASTER;
       else if(!strcmp(output_type, "PCLm"))
-	*outformat = OUTPUT_FORMAT_PCLM;
-      filter = malloc(sizeof(filter_filter_in_chain_t));
-      filter->function = ghostscript;
+	*outformat = CF_FILTER_OUT_FORMAT_PCLM;
+      filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+      filter->function = cfFilterGhostscript;
       filter->parameters = outformat;
       filter->name = "ghostscript";
       cupsArrayAdd(filter_chain, filter);
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "universal: Adding %s to chain", filter->name);
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterUniversal: Adding %s to chain", filter->name);
 
-      if (!strcmp(output, "image/urf"))
+      if (strcmp(output_type, "pwg-raster") &&
+	  strcmp(output_type, "vnd.cups-raster") &&
+	  strcmp(output_type, "PCLm"))
       {
-	filter = malloc(sizeof(filter_filter_in_chain_t));
-	outformat = malloc(sizeof(filter_out_format_t));
-	*outformat = OUTPUT_FORMAT_APPLE_RASTER;
-	filter->function = rastertopwg;
-	filter->parameters = outformat;
-	filter->name = "rastertopwg";
-	cupsArrayAdd(filter_chain, filter);
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "universal: Adding %s to chain",
-		     filter->name);
-      }
-      else if (strcmp(output_type, "pwg-raster") &&
-	       strcmp(output_type, "vnd.cups-raster") &&
-	       strcmp(output_type, "PCLm"))
-      {
-	outformat = malloc(sizeof(filter_out_format_t));
-	*outformat = OUTPUT_FORMAT_PDF;
-	filter = malloc(sizeof(filter_filter_in_chain_t));
-	filter->function = rastertopdf;
+	outformat = malloc(sizeof(cf_filter_out_format_t));
+	*outformat = CF_FILTER_OUT_FORMAT_PDF;
+	filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+	filter->function = cfFilterRasterToPDF;
 	filter->parameters = outformat;
 	filter->name = "rastertopdf";
 	cupsArrayAdd(filter_chain, filter);
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "universal: Adding %s to chain", filter->name);
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterUniversal: Adding %s to chain", filter->name);
       }
     }
     else if (!strcmp(input, "application/vnd.cups-pdf-banner"))
     {
-      filter = malloc(sizeof(filter_filter_in_chain_t));
-      filter->function = bannertopdf;
+      filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+      filter->function = cfFilterBannerToPDF;
       filter->parameters = NULL;
       filter->name = "bannertopdf";
       cupsArrayAdd(filter_chain, filter);
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "universal: Adding %s to chain", filter->name);
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterUniversal: Adding %s to chain", filter->name);
     }
     else if (!strstr(input_type, "pdf"))
     {
@@ -405,13 +376,13 @@ universal(int inputfd,         /* I - File descriptor input stream */
     if (strcmp(output_type, "pdf")) {
       if (strcmp(input_type, "vnd.cups-pdf"))
       {
-	filter = malloc(sizeof(filter_filter_in_chain_t));
-	filter->function = pdftopdf;
+	filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+	filter->function = cfFilterPDFToPDF;
 	filter->parameters = strdup(output);
 	filter->name = "pdftopdf";
 	cupsArrayAdd(filter_chain, filter);
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "universal: Adding %s to chain", filter->name);
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterUniversal: Adding %s to chain", filter->name);
       }
 
       if (strcmp(output_type, "vnd.cups-pdf"))
@@ -421,48 +392,32 @@ universal(int inputfd,         /* I - File descriptor input stream */
 	    !strcmp(output_type, "pwg-raster") ||
 	    !strcmp(output_type, "PCLm"))
 	{
-	  outformat = malloc(sizeof(filter_out_format_t));
-	  *outformat = OUTPUT_FORMAT_CUPS_RASTER;
+	  outformat = malloc(sizeof(cf_filter_out_format_t));
+	  *outformat = CF_FILTER_OUT_FORMAT_CUPS_RASTER;
 	  if (!strcmp(output_type, "pwg-raster"))
-	    *outformat = OUTPUT_FORMAT_PWG_RASTER;
-	  else if (!strcmp(output_type, "urf") ||
-		   (!strcmp(output_type, "vnd.cups-raster") &&
-		    !strcmp(final_output, "image/urf")))
-	    *outformat = OUTPUT_FORMAT_APPLE_RASTER;
+	    *outformat = CF_FILTER_OUT_FORMAT_PWG_RASTER;
+	  else if (!strcmp(output_type, "urf"))
+	    *outformat = CF_FILTER_OUT_FORMAT_APPLE_RASTER;
 	  else if(!strcmp(output_type, "PCLm"))
-	    *outformat = OUTPUT_FORMAT_PCLM;
-	  filter = malloc(sizeof(filter_filter_in_chain_t));
-	  filter->function = ghostscript;
+	    *outformat = CF_FILTER_OUT_FORMAT_PCLM;
+	  filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+	  filter->function = cfFilterGhostscript;
 	  filter->parameters = outformat;
 	  filter->name = "ghostscript";
 	  cupsArrayAdd(filter_chain, filter);
-	  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		       "universal: Adding %s to chain",
+	  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		       "cfFilterUniversal: Adding %s to chain",
 		       filter->name);
-
-	  if (!strcmp(output, "image/urf"))
-	  {
-	    filter = malloc(sizeof(filter_filter_in_chain_t));
-	    outformat = malloc(sizeof(filter_out_format_t));
-	    *outformat = OUTPUT_FORMAT_APPLE_RASTER;
-	    filter->function = rastertopwg;
-	    filter->parameters = outformat;
-	    filter->name = "rastertopwg";
-	    cupsArrayAdd(filter_chain, filter);
-	    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-			 "universal: Adding %s to chain",
-			 filter->name);
-	  }
 	}
 	else if(!strcmp(output, "application/postscript") ||
 		!strcmp(output, "application/vnd.cups-postscript"))
 	{
-	  filter = malloc(sizeof(filter_filter_in_chain_t));
-	  filter->function = pdftops;
+	  filter = malloc(sizeof(cf_filter_filter_in_chain_t));
+	  filter->function = cfFilterPDFToPS;
 	  filter->parameters = NULL;
 	  filter->name = "pdftops";
-	  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		       "universal: Adding %s to chain", filter->name);
+	  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		       "cfFilterUniversal: Adding %s to chain", filter->name);
 	  cupsArrayAdd(filter_chain, filter);
 	}
 	else
@@ -478,18 +433,18 @@ universal(int inputfd,         /* I - File descriptor input stream */
  out:
 
   if (ret) {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "universal: Unsupported combination of input and output formats: %s -> %s",
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterUniversal: Unsupported combination of input and output formats: %s -> %s",
 		 input, output);
   }
   else
     /* Do the dirty work ... */
-    ret = filterChain(inputfd, outputfd, inputseekable, data, filter_chain);
+    ret = cfFilterChain(inputfd, outputfd, inputseekable, data, filter_chain);
 
-  for (filter = (filter_filter_in_chain_t *)cupsArrayFirst(filter_chain);
+  for (filter = (cf_filter_filter_in_chain_t *)cupsArrayFirst(filter_chain);
        filter; filter = next)
   {
-    next = (filter_filter_in_chain_t *)cupsArrayNext(filter_chain);
+    next = (cf_filter_filter_in_chain_t *)cupsArrayNext(filter_chain);
     free(filter->parameters);
     free(filter);
   }

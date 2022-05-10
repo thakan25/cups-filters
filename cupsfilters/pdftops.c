@@ -13,7 +13,7 @@
  *   parsePDFTOPDFComment() - Check whether we are executed after pdftopdf
  *   remove_options()       - Remove unwished entries from an option list
  *   log_command_line()     - Log the command line of a program which we call
- *   pdftops()              - pdftops filter function
+ *   cfFilterPDFToPS()              - pdftops filter function
  */
 
 /*
@@ -100,14 +100,15 @@ const char *pstops_exclude_page_management[] = {
  * file
  */
 
-static void parsePDFTOPDFComment(char *filename,       /* I - Input file */
+static void
+parse_pdftopdf_comment(char *filename,       /* I - Input file */
 				 int *pdftopdfapplied, /* O - Does the input
 							      data come from
 							      pdftopdf filter?*/
 				 char *deviceCopies,   /* O - Number of copies
 							      (hardware) */
 				 int *deviceCollate,   /* O - Hardware collate*/
-				 filter_logfunc_t log, /* I - Log function */
+				 cf_logfunc_t log, /* I - Log function */
 				 void *ld)             /* I - Aux. data for
 							      log function */
 {
@@ -116,8 +117,8 @@ static void parsePDFTOPDFComment(char *filename,       /* I - Input file */
   FILE *fp;
 
   if ((fp = fopen(filename,"rb")) == NULL) {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "pdftops: Cannot open input file \"%s\"",
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterPDFToPS: Cannot open input file \"%s\"",
 		 filename);
     return;
   }
@@ -165,17 +166,17 @@ static void parsePDFTOPDFComment(char *filename,       /* I - Input file */
  * Check whether given file is empty
  */
 
-int                            /* O - Result: 1: Empty; 0: Contains pages */
+static int                     /* O - Result: 1: Empty; 0: Contains pages */
 is_empty(char *filename,       /* I - Input file */
-	 filter_logfunc_t log, /* I - Log function */
+	 cf_logfunc_t log, /* I - Log function */
 	 void *ld)             /* I - Auxiliary data for log function */
 {
   FILE *fp = NULL;
   fp = fopen(filename, "rb");
   if (fp == NULL)
   {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "pdftops: Cannot open input file \"%s\"",
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterPDFToPS: Cannot open input file \"%s\"",
 		 filename);
     return 1;
   }
@@ -185,15 +186,15 @@ is_empty(char *filename,       /* I - Input file */
     rewind(fp);
     if (fread(buf, 1, 1, fp) == 0) {
       fclose(fp);
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: Input is empty, outputting empty file.");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: Input is empty, outputting empty file.");
       return 1;
     }
     fclose(fp);
-    int pages = pdf_pages(filename);
+    int pages = cfPDFPages(filename);
     if (pages == 0) {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: No pages left, outputting empty file.");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: No pages left, outputting empty file.");
       return 1;
     }
     if (pages > 0)
@@ -211,7 +212,7 @@ is_empty(char *filename,       /* I - Input file */
 void
 log_command_line(const char* file,     /* I - Program to be executed */
 		 char *const argv[],   /* I - Argument list */
-		 filter_logfunc_t log, /* I - Log function */
+		 cf_logfunc_t log, /* I - Log function */
 		 void *ld)             /* I - Auxiliary data for log function */
 {
   int i;
@@ -222,7 +223,7 @@ log_command_line(const char* file,     /* I - Program to be executed */
     return;
 
   /* Debug output: Full command line of program to be called */
-  snprintf(buf, sizeof(buf) - 1, "pdftops: Running command line for %s:",
+  snprintf(buf, sizeof(buf) - 1, "cfFilterPDFToPS: Running command line for %s:",
 	   (file ? file : argv[0]));
   if (file)
     snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf) - 1,
@@ -237,20 +238,20 @@ log_command_line(const char* file,     /* I - Program to be executed */
   }
   buf[sizeof(buf) - 1] = '\0';
 
-  log(ld, FILTER_LOGLEVEL_DEBUG, "%s", buf);
+  log(ld, CF_LOGLEVEL_DEBUG, "%s", buf);
 }
 
 
 /*
- * 'pdftops()' - Filter function to convert PDF input into
+ * 'cfFilterPDFToPS()' - Filter function to convert PDF input into
  *               PostScript to be printed on PostScript printers
  */
 
 int                          /* O - Error status */
-pdftops(int inputfd,         /* I - File descriptor input stream */
+cfFilterPDFToPS(int inputfd,         /* I - File descriptor input stream */
 	int outputfd,        /* I - File descriptor output stream */
 	int inputseekable,   /* I - Is input stream seekable? (unused) */
-	filter_data_t *data, /* I - Job and printer data */
+	cf_filter_data_t *data, /* I - Job and printer data */
 	void *parameters)    /* I - Filter-specific parameters (unused) */
 {
   renderer_t    renderer = CUPS_PDFTOPS_RENDERER; /* Renderer: gs or pdftops
@@ -273,7 +274,7 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
                 *pstops_options,	/* Options for pstops filter function */
                 *option;
   const char    *exclude;
-  filter_data_t pstops_filter_data;
+  cf_filter_data_t pstops_filter_data;
   int           ret;
   const char	*val;			/* Option value */
   ppd_file_t	*ppd;			/* PPD file */
@@ -303,9 +304,9 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 		*ptr;			/* Pointer into value */
   int		duplex, tumble;         /* Duplex settings for PPD-less
 					   printing */
-  filter_logfunc_t log = data->logfunc;
+  cf_logfunc_t log = data->logfunc;
   void          *ld = data->logdata;
-  filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
+  cf_filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
   void          *icd = data->iscanceleddata;
   ipp_t *printer_attrs = data->printer_attrs;
   ipp_t *job_attrs = data->job_attrs;
@@ -329,8 +330,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
   {
     if (!iscanceled || !iscanceled(icd))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: Unable to open input data stream.");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: Unable to open input data stream.");
     }
 
     return (1);
@@ -342,13 +343,13 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 
   if ((fd = cupsTempFd(tempfile, sizeof(tempfile))) < 0)
   {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "pdftops: Unable to copy PDF file: %s", strerror(errno));
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterPDFToPS: Unable to copy PDF file: %s", strerror(errno));
     return (1);
   }
 
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "pdftops: Copying input to temp file \"%s\"",
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterPDFToPS: Copying input to temp file \"%s\"",
 	       tempfile);
 
   while ((bytes = fread(buffer, 1, sizeof(buffer), inputfp)) > 0)
@@ -378,14 +379,14 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
   * Read out copy counts and collate setting passed over by pdftopdf
   */
 
-  parsePDFTOPDFComment(filename, &pdftopdfapplied, deviceCopies,
-		       &deviceCollate, log, ld);
+  parse_pdftopdf_comment(filename, &pdftopdfapplied, deviceCopies,
+			 &deviceCollate, log, ld);
 
  /*
   * CUPS option list
   */
 
-  num_options = joinJobOptionsAndAttrs(data, num_options, &options);
+  num_options = cfJoinJobOptionsAndAttrs(data, num_options, &options);
   
 
   ppd = data->ppd;
@@ -425,8 +426,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	     ppd->product + 1);
     make_model[strlen(make_model) - 1] = '\0';
   }
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "pdftops: Printer make and model: %s", make_model);
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterPDFToPS: Printer make and model: %s", make_model);
 
  /*
   * Select the PDF renderer: Ghostscript (gs), Poppler (pdftops),
@@ -450,8 +451,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     else if (strcasecmp(val, "hybrid") == 0)
       renderer = HYBRID;
     else
-      if (log) log(ld, FILTER_LOGLEVEL_WARN,
-		   "pdftops: Invalid value for \"pdftops-renderer\": \"%s\"",
+      if (log) log(ld, CF_LOGLEVEL_WARN,
+		   "cfFilterPDFToPS: Invalid value for \"pdftops-renderer\": \"%s\"",
 		   val);
   }
 
@@ -464,8 +465,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	 (!strncasecmp(make_model, "Apple", 5) &&
 	  (ptr = strcasestr(make_model, "LaserWriter")))))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: Switching to Poppler's pdftops instead of "
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: Switching to Poppler's pdftops instead of "
 		   "Ghostscript for Brother, Minolta, Konica Minolta, Dell, "
 		   "and Apple LaserWriter printers to work around bugs in the "
 		   "printer's PS interpreters");
@@ -491,12 +492,17 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	if (isspace(*ptr)) continue;
 	if (isdigit(*ptr))
 	{
-	  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		       "pdftops: Switching to Poppler's pdftops instead of "
-		       "Ghostscript for old HP LaserJet (\"LaserJet "
-		       "<number>\", no letters before <number>) printers to "
-		       "work around bugs in the printer's PS interpreters");
-	  renderer = PDFTOPS;
+	  while (*ptr && isalnum(*ptr)) ptr ++;
+	  if (!*ptr) /* End of string, no further word */
+	  {
+	    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+			 "cfFilterPDFToPS: Switching to Poppler's pdftops instead of "
+			 "Ghostscript for old HP LaserJet (\"LaserJet "
+			 "<number>\", no letters before <number>, no "
+			 "additional words after <number>) printers to "
+			 "work around bugs in the printer's PS interpreters");
+	    renderer = PDFTOPS;
+	  }
 	}
 	break;
       }
@@ -615,7 +621,7 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
   }
 
  /*
-  * Build the command-line for the pdftops, gs, mutool, pdftocairo, or
+  * Build the command-line for the cfFilterPDFToPS, gs, mutool, pdftocairo, or
   * acroread filter...
   */
 
@@ -695,19 +701,19 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	pdf_argv[pdf_argc++] = (char *)"-dLanguageLevel=1";
       else if (renderer == PDFTOCAIRO)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_WARN,
-		     "pdftops: Level 1 PostScript not supported by "
+	if (log) log(ld, CF_LOGLEVEL_WARN,
+		     "cfFilterPDFToPS: Level 1 PostScript not supported by "
 		     "pdftocairo.");
       }
       else if (renderer == ACROREAD)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_WARN,
-		     "pdftops: Level 1 PostScript not supported by acroread.");
+	if (log) log(ld, CF_LOGLEVEL_WARN,
+		     "cfFilterPDFToPS: Level 1 PostScript not supported by acroread.");
       }
       else if (renderer == MUPDF)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_WARN,
-		     "pdftops: Level 1 PostScript not supported by mutool.");
+	if (log) log(ld, CF_LOGLEVEL_WARN,
+		     "cfFilterPDFToPS: Level 1 PostScript not supported by mutool.");
       }
     }
     else if (ppd->language_level == 2)
@@ -755,8 +761,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
       }
       else if (renderer == MUPDF)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_WARN,
-		     "pdftops: Level 3 PostScript not supported by mutool.");
+	if (log) log(ld, CF_LOGLEVEL_WARN,
+		     "cfFilterPDFToPS: Level 3 PostScript not supported by mutool.");
       }
       else /* PDFTOCAIRO || ACROREAD */
         pdf_argv[pdf_argc++] = (char *)"-level3";
@@ -831,11 +837,11 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     resolution[sizeof(resolution)-1] = '\0';
     if ((xres == 0) && (yres == 0) &&
 	((numvalues = sscanf(resolution, "%dx%d", &xres, &yres)) <= 0))
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: No resolution information found in the PPD file.");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: No resolution information found in the PPD file.");
   }
   else{
-    cupsRasterParseIPPOptions(&header, data, 0, 1);
+    cfRasterParseIPPOptions(&header, data, 0, 1);
     if (header.HWResolution[0] > 100 && header.HWResolution[1] > 100)
     {
       xres = header.HWResolution[0];
@@ -886,8 +892,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	   strcasecmp(ptr, "dpc") &&
 	   strcasecmp(ptr, "dpcm")))
       {
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "pdftops: Bad resolution value \"%s\".", val);
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterPDFToPS: Bad resolution value \"%s\".", val);
       }
       else
       {
@@ -922,8 +928,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     if ((numvalues = sscanf(val, "%d", &mres)) > 0)
       maxres = mres;
     else
-      if (log) log(ld, FILTER_LOGLEVEL_WARN,
-		   "pdftops: Invalid value for "
+      if (log) log(ld, CF_LOGLEVEL_WARN,
+		   "cfFilterPDFToPS: Invalid value for "
 		   "\"pdftops-max-image-resolution\": \"%s\"",
 		   val);
   }
@@ -949,8 +955,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     pdf_argv[pdf_argc++] = (char *)"-r";
     snprintf(resolution, sizeof(resolution), "%d", res);
     pdf_argv[pdf_argc++] = resolution;
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "pdftops: Using image rendering resolution %d dpi", res);
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterPDFToPS: Using image rendering resolution %d dpi", res);
 #endif /* HAVE_POPPLER_PDFTOPS_WITH_RESOLUTION */
     if (gray_output == 1) /* Checking for monochrome/grayscale PostScript
 			     output */
@@ -968,12 +974,12 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
       /* pdf_argv[1] = (char *)"-level1";
 	 pdf_argv[pdf_argc++] = (char *)"-optimizecolorspace"; */
       /* Issue a warning message when printing a grayscale job with Poppler */
-      if (log) log(ld, FILTER_LOGLEVEL_WARN,
-		   "pdftops: Grayscale/monochrome printing requested for this "
+      if (log) log(ld, CF_LOGLEVEL_WARN,
+		   "cfFilterPDFToPS: Grayscale/monochrome printing requested for this "
 		   "job but Poppler is not able to convert to "
 		   "grayscale/monochrome PostScript.");
-      if (log) log(ld, FILTER_LOGLEVEL_WARN,
-		   "pdftops: Use \"pdftops-renderer\" option (see "
+      if (log) log(ld, CF_LOGLEVEL_WARN,
+		   "cfFilterPDFToPS: Use \"pdftops-renderer\" option (see "
 		   "cups-filters README file) to use Ghostscript or MuPDF for "
 		   "the PDF -> PostScript conversion.");
     }
@@ -988,8 +994,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     */
     snprintf(resolution, 127, "-r%d", res);
     pdf_argv[pdf_argc++] = resolution;
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "pdftops: Using image rendering resolution %d dpi", res);
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterPDFToPS: Using image rendering resolution %d dpi", res);
    /*
     * PostScript debug mode: If you send a job with "lpr -o psdebug" Ghostscript
     * will not compress the pages, so that the PostScript code can get
@@ -1005,8 +1011,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	 (!strncasecmp(make_model, "Kyocera", 7) ||
 	  !strncasecmp(make_model, "Utax", 4))))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: Deactivated compression of pages in "
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: Deactivated compression of pages in "
 		   "Ghostscript's PostScript output (\"psdebug\" debug mode "
 		   "or Kyocera/Utax printer)");
       pdf_argv[pdf_argc++] = (char *)"-dCompressPages=false";
@@ -1022,8 +1028,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     if (make_model[0] &&
 	!strncasecmp(make_model, "Brother", 7))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: Deactivation of Ghostscript's image compression "
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: Deactivation of Ghostscript's image compression "
 		   "for Brother printers to workarounmd PS interpreter bug");
       pdf_argv[pdf_argc++] = (char *)"-dEncodeMonoImages=false";
       pdf_argv[pdf_argc++] = (char *)"-dEncodeColorImages=false";
@@ -1038,8 +1044,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     if (make_model[0] &&
 	!strncasecmp(make_model, "Toshiba", 7))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: To work around a bug in Toshiba's PS "
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: To work around a bug in Toshiba's PS "
 		   "interpreters turn TTF font glyphs into bitmaps, usually "
 		   "Type 3 PS fonts, or images for large characters");
       pdf_argv[pdf_argc++] = (char *)"-dHaveTrueTypes=false";
@@ -1110,8 +1116,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
   {
     if (pipe(pstops_pipe))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to create pipe for pstops: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to create pipe for cfFilterPSToPS: %s",
 		   strerror(errno));
 
       exit_status = 1;
@@ -1123,8 +1129,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
   {
     if (pipe(post_proc_pipe))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to create pipe for post-processing: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to create pipe for post-processing: %s",
 		   strerror(errno));
 
       exit_status = 1;
@@ -1156,22 +1162,22 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     if (renderer == PDFTOPS)
     {
       execvp(CUPS_POPPLER_PDFTOPS, pdf_argv);
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to execute pdftops program: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to execute pdftops program: %s",
 		   strerror(errno));
     }
     else if (renderer == GS)
     {
       execvp(CUPS_GHOSTSCRIPT, pdf_argv);
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to execute gs program: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to execute gs program: %s",
 		   strerror(errno));
     }
     else if (renderer == PDFTOCAIRO)
     {
       execvp(CUPS_POPPLER_PDFTOCAIRO, pdf_argv);
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to execute pdftocairo program: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to execute pdftocairo program: %s",
 		   strerror(errno));
     }
     else if (renderer == ACROREAD)
@@ -1187,15 +1193,15 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
       }
      
       execvp(CUPS_ACROREAD, pdf_argv);
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to execute acroread program: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to execute acroread program: %s",
 		   strerror(errno));
     }
     else if (renderer == MUPDF)
     {
       execvp(CUPS_MUTOOL, pdf_argv);
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to execute mutool program: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to execute mutool program: %s",
 		   strerror(errno));
     }
 
@@ -1210,24 +1216,24 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     if (log)
     {
       if (renderer == PDFTOPS)
-	log(ld, FILTER_LOGLEVEL_ERROR,
-	    "pdftops: Unable to execute pdftops program: %s",
+	log(ld, CF_LOGLEVEL_ERROR,
+	    "cfFilterPDFToPS: Unable to execute pdftops program: %s",
 	    strerror(errno));
       else if (renderer == GS)
-	log(ld, FILTER_LOGLEVEL_ERROR,
-	    "pdftops: Unable to execute gs program: %s",
+	log(ld, CF_LOGLEVEL_ERROR,
+	    "cfFilterPDFToPS: Unable to execute gs program: %s",
 	    strerror(errno));
       else if (renderer == PDFTOCAIRO)
-	log(ld, FILTER_LOGLEVEL_ERROR,
-	    "pdftops: Unable to execute pdftocairo program: %s",
+	log(ld, CF_LOGLEVEL_ERROR,
+	    "cfFilterPDFToPS: Unable to execute pdftocairo program: %s",
 	    strerror(errno));
       else if (renderer == ACROREAD)
-	log(ld, FILTER_LOGLEVEL_ERROR,
-	    "pdftops: Unable to execute acroread program: %s",
+	log(ld, CF_LOGLEVEL_ERROR,
+	    "cfFilterPDFToPS: Unable to execute acroread program: %s",
 	    strerror(errno));
       else if (renderer == MUPDF)
-	log(ld, FILTER_LOGLEVEL_ERROR,
-	    "pdftops: Unable to execute mutool program: %s",
+	log(ld, CF_LOGLEVEL_ERROR,
+	    "cfFilterPDFToPS: Unable to execute mutool program: %s",
 	    strerror(errno));
     }
 
@@ -1235,8 +1241,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     goto error;
   }
 
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "pdftops: Started filter %s (PID %d)", pdf_argv[0], pdf_pid);
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterPDFToPS: Started filter %s (PID %d)", pdf_argv[0], pdf_pid);
 
   if (need_post_proc)
   {
@@ -1304,8 +1310,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	  if (strncmp(buffer, "%%BeginProlog", 13))
 	  {
 	    /* No Prolog section, create one */
-	    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-			 "pdftops: Adding Prolog section for workaround "
+	    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+			 "cfFilterPDFToPS: Adding Prolog section for workaround "
 			 "PostScript code");
 	    puts("%%BeginProlog");
 	  }
@@ -1335,8 +1341,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	    if (!strncasecmp(make_model, "Kyocera", 7) ||
 		!strncasecmp(make_model, "Utax", 4))
 	    {
-	      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-			   "pdftops: Inserted workaround PostScript code for "
+	      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+			   "cfFilterPDFToPS: Inserted workaround PostScript code for "
 			   "Kyocera and Utax printers");
 	      puts("% ===== Workaround insertion by pdftops CUPS filter =====");
 	      puts("% Kyocera's/Utax's PostScript interpreter crashes on "
@@ -1371,8 +1377,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 
 	    else if (!strncasecmp(make_model, "Brother", 7))
 	    {
-	      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-			   "pdftops: Inserted workaround PostScript code for "
+	      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+			   "cfFilterPDFToPS: Inserted workaround PostScript code for "
 			   "Brother printers");
 	      puts("% ===== Workaround insertion by pdftops CUPS filter =====");
 	      puts("% Brother's PostScript interpreter spits out the current "
@@ -1420,8 +1426,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	      if (strncmp(buffer, "%%BeginSetup", 12))
 	      {
 		/* No Setup section, create one */
-		if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-			     "pdftops: Adding Setup section for option "
+		if (log) log(ld, CF_LOGLEVEL_DEBUG,
+			     "cfFilterPDFToPS: Adding Setup section for option "
 			     "PostScript code");
 		puts("%%BeginSetup");
 	      }
@@ -1581,16 +1587,16 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
       * Unable to fork!
       */
 
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to execute post-processing process: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to execute post-processing process: %s",
 		   strerror(errno));
 
       exit_status = 1;
       goto error;
     }
 
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "pdftops: Started post-processing (PID %d)", post_proc_pid);
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterPDFToPS: Started post-processing (PID %d)", post_proc_pid);
   }
 
   if (ppd)
@@ -1608,11 +1614,11 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 	close(post_proc_pipe[1]);
       }
 
-      ret = pstops(pstops_pipe[0], outputfd, 0, &pstops_filter_data, NULL);
+      ret = cfFilterPSToPS(pstops_pipe[0], outputfd, 0, &pstops_filter_data, NULL);
       close(pstops_pipe[0]);
 
-      if (ret && log) log(ld, FILTER_LOGLEVEL_ERROR,
-			  "pdftops: pstops filter function failed.");
+      if (ret && log) log(ld, CF_LOGLEVEL_ERROR,
+			  "cfFilterPDFToPS: pstops filter function failed.");
 
       close(outputfd);
       exit(ret);
@@ -1623,16 +1629,16 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
       * Unable to fork!
       */
 
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pdftops: Unable to execute pstops program: %s",
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPDFToPS: Unable to execute pstops program: %s",
 		   strerror(errno));
 
       exit_status = 1;
       goto error;
     }
 
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "pdftops: Started filter pstops (PID %d)", pstops_pid);
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterPDFToPS: Started filter pstops (PID %d)", pstops_pid);
 
     close(pstops_pipe[0]);
     close(pstops_pipe[1]);
@@ -1682,8 +1688,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
       {
 	exit_status = WEXITSTATUS(wait_status);
 
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "pdftops: PID %d (%s) stopped with status %d!",
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterPDFToPS: PID %d (%s) stopped with status %d!",
 		     wait_pid,
 		     wait_pid == pdf_pid ?
 		     (renderer == PDFTOPS ? "pdftops" :
@@ -1699,8 +1705,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
       }
       else if (WTERMSIG(wait_status) == SIGTERM)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "pdftops: PID %d (%s) was terminated normally with "
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterPDFToPS: PID %d (%s) was terminated normally with "
 		     "signal %d!",
 		     wait_pid,
 		     wait_pid == pdf_pid ?
@@ -1719,8 +1725,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
       {
 	exit_status = WTERMSIG(wait_status);
 
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		     "pdftops: PID %d (%s) crashed on signal %d!",
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
+		     "cfFilterPDFToPS: PID %d (%s) crashed on signal %d!",
 		     wait_pid,
 		     wait_pid == pdf_pid ?
 		     (renderer == PDFTOPS ? "pdftops" :
@@ -1737,8 +1743,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
     }
     else
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pdftops: PID %d (%s) exited with no errors.",
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPDFToPS: PID %d (%s) exited with no errors.",
 		   wait_pid,
 		   wait_pid == pdf_pid ?
 		   (renderer == PDFTOPS ? "pdftops" :
@@ -1759,8 +1765,8 @@ pdftops(int inputfd,         /* I - File descriptor input stream */
 
   error:
 
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "pdftops: Closing files ...");
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterPDFToPS: Closing files ...");
 
   close(outputfd);
 

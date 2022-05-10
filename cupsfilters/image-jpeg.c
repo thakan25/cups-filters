@@ -11,7 +11,7 @@
  *
  * Contents:
  *
- *   _cupsImageReadJPEG() - Read a JPEG image file.
+ *   _cfImageReadJPEG() - Read a JPEG image file.
  */
 
 /*
@@ -26,33 +26,34 @@
 
 #define JPEG_APP0 0xE0 /* APP0 marker code */
 /*
- * '_cupsImageReadJPEG()' - Read a JPEG image file.
+ * '_cfImageReadJPEG()' - Read a JPEG image file.
  */
 
-int /* O  - Read status */
-_cupsImageReadJPEG(
-    cups_image_t *img,        /* IO - cupsImage */
-    FILE *fp,                 /* I  - cupsImage file */
-    cups_icspace_t primary,   /* I  - Primary choice for colorspace */
-    cups_icspace_t secondary, /* I  - Secondary choice for colorspace */
-    int saturation,           /* I  - Color saturation (%) */
-    int hue,                  /* I  - Color hue (degrees) */
-    const cups_ib_t *lut)     /* I  - Lookup table for gamma/brightness */
+int					/* O  - Read status */
+_cfImageReadJPEG(
+    cf_image_t    *img,		/* IO - Image */
+    FILE            *fp,		/* I  - Image file */
+    cf_icspace_t  primary,		/* I  - Primary choice for colorspace */
+    cf_icspace_t  secondary,		/* I  - Secondary choice for colorspace */
+    int             saturation,		/* I  - Color saturation (%) */
+    int             hue,		/* I  - Color hue (degrees) */
+    const cf_ib_t *lut)		/* I  - Lookup table for gamma/brightness */
 {
-  struct jpeg_decompress_struct cinfo; /* Decompressor info */
-  struct jpeg_error_mgr jerr;          /* Error handler info */
-  cups_ib_t *in,                       /* Input pixels */
-      *out;                            /* Output pixels */
-  jpeg_saved_marker_ptr marker;        /* Pointer to marker data */
-  int psjpeg = 0;                      /* Non-zero if Photoshop CMYK JPEG */
-  static const char *cspaces[] =
-      {/* JPEG colorspaces... */
-       "JCS_UNKNOWN",
-       "JCS_GRAYSCALE",
-       "JCS_RGB",
-       "JCS_YCbCr",
-       "JCS_CMYK",
-       "JCS_YCCK"};
+  struct jpeg_decompress_struct	cinfo;	/* Decompressor info */
+  struct jpeg_error_mgr	jerr;		/* Error handler info */
+  cf_ib_t		*in,		/* Input pixels */
+			*out;		/* Output pixels */
+  jpeg_saved_marker_ptr	marker;		/* Pointer to marker data */
+  int			psjpeg = 0;	/* Non-zero if Photoshop CMYK JPEG */
+  static const char	*cspaces[] =
+			{		/* JPEG colorspaces... */
+			  "JCS_UNKNOWN",
+			  "JCS_GRAYSCALE",
+			  "JCS_RGB",
+			  "JCS_YCbCr",
+			  "JCS_CMYK",
+			  "JCS_YCCK"
+			};
 
   (void)cspaces;
 
@@ -104,7 +105,7 @@ _cupsImageReadJPEG(
     cinfo.out_color_components = 4;
     cinfo.output_components = 4;
 
-    img->colorspace = (primary == CUPS_IMAGE_RGB_CMYK) ? CUPS_IMAGE_CMYK : primary;
+    img->colorspace = (primary == CF_IMAGE_RGB_CMYK) ? CF_IMAGE_CMYK : primary;
   }
   else
   {
@@ -114,13 +115,13 @@ _cupsImageReadJPEG(
     cinfo.out_color_components = 3;
     cinfo.output_components = 3;
 
-    img->colorspace = (primary == CUPS_IMAGE_RGB_CMYK) ? CUPS_IMAGE_RGB : primary;
+    img->colorspace = (primary == CF_IMAGE_RGB_CMYK) ? CF_IMAGE_RGB : primary;
   }
 
   jpeg_calc_output_dimensions(&cinfo);
 
-  if (cinfo.output_width <= 0 || cinfo.output_width > CUPS_IMAGE_MAX_WIDTH ||
-      cinfo.output_height <= 0 || cinfo.output_height > CUPS_IMAGE_MAX_HEIGHT)
+  if (cinfo.output_width <= 0 || cinfo.output_width > CF_IMAGE_MAX_WIDTH ||
+      cinfo.output_height <= 0 || cinfo.output_height > CF_IMAGE_MAX_HEIGHT)
   {
     DEBUG_printf(("DEBUG: Bad JPEG dimensions %dx%d!\n",
                   cinfo.output_width, cinfo.output_height));
@@ -169,10 +170,10 @@ _cupsImageReadJPEG(
                 img->xsize, img->ysize, cinfo.output_components,
                 img->xppi, img->yppi));
 
-  cupsImageSetMaxTiles(img, 0);
+  cfImageSetMaxTiles(img, 0);
 
-  in = malloc(img->xsize * cinfo.output_components);
-  out = malloc(img->xsize * cupsImageGetDepth(img));
+  in  = malloc(img->xsize * cinfo.output_components);
+  out = malloc(img->xsize * cfImageGetDepth(img));
 
   jpeg_start_decompress(&cinfo);
 
@@ -186,22 +187,23 @@ _cupsImageReadJPEG(
        * Invert CMYK data from Photoshop...
        */
 
-      cups_ib_t *ptr; /* Pointer into buffer */
-      int i;          /* Looping var */
+      cf_ib_t	*ptr;	/* Pointer into buffer */
+      int	i;	/* Looping var */
 
       for (ptr = in, i = img->xsize * 4; i > 0; i--, ptr++)
         *ptr = 255 - *ptr;
     }
 
     if ((saturation != 100 || hue != 0) && cinfo.output_components == 3)
-      cupsImageRGBAdjust(in, img->xsize, saturation, hue);
+      cfImageRGBAdjust(in, img->xsize, saturation, hue);
 
-    if ((img->colorspace == CUPS_IMAGE_WHITE && cinfo.out_color_space == JCS_GRAYSCALE) ||
-        (img->colorspace == CUPS_IMAGE_CMYK && cinfo.out_color_space == JCS_CMYK))
+    if ((img->colorspace == CF_IMAGE_WHITE && cinfo.out_color_space == JCS_GRAYSCALE) ||
+	(img->colorspace == CF_IMAGE_CMYK && cinfo.out_color_space == JCS_CMYK))
     {
 #ifdef DEBUG
-      int i, j;
-      cups_ib_t *ptr;
+      int	i, j;
+      cf_ib_t	*ptr;
+
 
       DEBUG_puts("DEBUG: Direct Data...\n");
 
@@ -218,64 +220,64 @@ _cupsImageReadJPEG(
 #endif /* DEBUG */
 
       if (lut)
-        cupsImageLut(in, img->xsize * cupsImageGetDepth(img), lut);
+        cfImageLut(in, img->xsize * cfImageGetDepth(img), lut);
 
-      _cupsImagePutRow(img, 0, cinfo.output_scanline - 1, img->xsize, in);
+      _cfImagePutRow(img, 0, cinfo.output_scanline - 1, img->xsize, in);
     }
     else if (cinfo.out_color_space == JCS_GRAYSCALE)
     {
       switch (img->colorspace)
       {
-      default:
-        break;
+        default :
+	    break;
 
-      case CUPS_IMAGE_BLACK:
-        cupsImageWhiteToBlack(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_RGB:
-        cupsImageWhiteToRGB(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_CMY:
-        cupsImageWhiteToCMY(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_CMYK:
-        cupsImageWhiteToCMYK(in, out, img->xsize);
-        break;
+        case CF_IMAGE_BLACK :
+            cfImageWhiteToBlack(in, out, img->xsize);
+            break;
+        case CF_IMAGE_RGB :
+            cfImageWhiteToRGB(in, out, img->xsize);
+            break;
+        case CF_IMAGE_CMY :
+            cfImageWhiteToCMY(in, out, img->xsize);
+            break;
+        case CF_IMAGE_CMYK :
+            cfImageWhiteToCMYK(in, out, img->xsize);
+            break;
       }
 
       if (lut)
-        cupsImageLut(out, img->xsize * cupsImageGetDepth(img), lut);
+        cfImageLut(out, img->xsize * cfImageGetDepth(img), lut);
 
-      _cupsImagePutRow(img, 0, cinfo.output_scanline - 1, img->xsize, out);
+      _cfImagePutRow(img, 0, cinfo.output_scanline - 1, img->xsize, out);
     }
     else if (cinfo.out_color_space == JCS_RGB)
     {
       switch (img->colorspace)
       {
-      default:
-        break;
+        default :
+	    break;
 
-      case CUPS_IMAGE_RGB:
-        cupsImageRGBToRGB(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_WHITE:
-        cupsImageRGBToWhite(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_BLACK:
-        cupsImageRGBToBlack(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_CMY:
-        cupsImageRGBToCMY(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_CMYK:
-        cupsImageRGBToCMYK(in, out, img->xsize);
-        break;
+        case CF_IMAGE_RGB :
+            cfImageRGBToRGB(in, out, img->xsize);
+	    break;
+        case CF_IMAGE_WHITE :
+            cfImageRGBToWhite(in, out, img->xsize);
+            break;
+        case CF_IMAGE_BLACK :
+            cfImageRGBToBlack(in, out, img->xsize);
+            break;
+        case CF_IMAGE_CMY :
+            cfImageRGBToCMY(in, out, img->xsize);
+            break;
+        case CF_IMAGE_CMYK :
+            cfImageRGBToCMYK(in, out, img->xsize);
+            break;
       }
 
       if (lut)
-        cupsImageLut(out, img->xsize * cupsImageGetDepth(img), lut);
+        cfImageLut(out, img->xsize * cfImageGetDepth(img), lut);
 
-      _cupsImagePutRow(img, 0, cinfo.output_scanline - 1, img->xsize, out);
+      _cfImagePutRow(img, 0, cinfo.output_scanline - 1, img->xsize, out);
     }
     else /* JCS_CMYK */
     {
@@ -283,27 +285,27 @@ _cupsImageReadJPEG(
 
       switch (img->colorspace)
       {
-      default:
-        break;
+        default :
+	    break;
 
-      case CUPS_IMAGE_WHITE:
-        cupsImageCMYKToWhite(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_BLACK:
-        cupsImageCMYKToBlack(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_CMY:
-        cupsImageCMYKToCMY(in, out, img->xsize);
-        break;
-      case CUPS_IMAGE_RGB:
-        cupsImageCMYKToRGB(in, out, img->xsize);
-        break;
+        case CF_IMAGE_WHITE :
+            cfImageCMYKToWhite(in, out, img->xsize);
+            break;
+        case CF_IMAGE_BLACK :
+            cfImageCMYKToBlack(in, out, img->xsize);
+            break;
+        case CF_IMAGE_CMY :
+            cfImageCMYKToCMY(in, out, img->xsize);
+            break;
+        case CF_IMAGE_RGB :
+            cfImageCMYKToRGB(in, out, img->xsize);
+            break;
       }
 
       if (lut)
-        cupsImageLut(out, img->xsize * cupsImageGetDepth(img), lut);
+        cfImageLut(out, img->xsize * cfImageGetDepth(img), lut);
 
-      _cupsImagePutRow(img, 0, cinfo.output_scanline - 1, img->xsize, out);
+      _cfImagePutRow(img, 0, cinfo.output_scanline - 1, img->xsize, out);
     }
   }
 

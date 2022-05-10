@@ -26,7 +26,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 /*
  pwgtoraster.c
- PWG Raster to CUPS Raster filter function
+ PWG/Apple Raster to CUPS/PWG/Apple Raster filter function
 */
 
 #include "colormanager.h"
@@ -99,7 +99,7 @@ typedef struct cms_profile_s
   cmsCIEXYZ D65WhitePoint;
   int renderingIntent;
   int cm_disabled;
-  cm_calibration_t cm_calibrate;
+  cf_cm_calibration_t cm_calibrate;
 } cms_profile_t;
 
 typedef struct pwgtoraster_doc_s
@@ -113,7 +113,7 @@ typedef struct pwgtoraster_doc_s
   ppd_file_t *ppd;
   cups_page_header2_t inheader;
   cups_page_header2_t outheader;
-  filter_logfunc_t logfunc;             /* Logging function, NULL for no
+  cf_logfunc_t logfunc;             /* Logging function, NULL for no
 					   logging */
   void          *logdata;               /* User data for logging function, can
 					   be NULL */
@@ -130,30 +130,30 @@ typedef struct pwgtoraster_doc_s
   cms_profile_t color_profile;
 } pwgtoraster_doc_t;
 
-typedef unsigned char *(*ConvertCSpaceFunc)(unsigned char *src,
+typedef unsigned char *(*convert_cspace_func)(unsigned char *src,
                         unsigned char *pixelBuf,
                         unsigned int x,
                         unsigned int y,
                         pwgtoraster_doc_t* doc);
-typedef unsigned char *(*ConvertLineFunc)(unsigned char *src,
+typedef unsigned char *(*convert_line_func)(unsigned char *src,
                         unsigned char *dst, 
                         unsigned int row, 
                         unsigned int plane,
                         unsigned int pixels, 
                         unsigned int size, 
                         pwgtoraster_doc_t* doc,
-                        ConvertCSpaceFunc convertCSpace);
+                        convert_cspace_func convertCSpace);
 
 typedef struct conversion_function_s
 {
-  ConvertCSpaceFunc convertCSpace;	/* Function for conversion of colorspaces */
-  ConvertLineFunc convertLineOdd;/* Function tom modify raster data of a line */
-  ConvertLineFunc convertLineEven;
+  convert_cspace_func convertCSpace;	/* Function for conversion of colorspaces */
+  convert_line_func convertLineOdd;/* Function to modify raster data of a line */
+  convert_line_func convertLineEven;
 } conversion_function_t;
 
-cmsCIExyY adobergb_wp_cms()
+static cmsCIExyY adobergb_wp_cms()
 {
-    double * xyY = cmWhitePointAdobeRgb();
+    double * xyY = cfCmWhitePointAdobeRGB();
     cmsCIExyY wp;
 
     wp.x = xyY[0];
@@ -163,9 +163,9 @@ cmsCIExyY adobergb_wp_cms()
     return wp;
 }
 
-cmsCIExyY sgray_wp_cms()
+static cmsCIExyY sgray_wp_cms()
 {
-    double * xyY = cmWhitePointSGray();
+    double * xyY = cfCmWhitePointSGray();
     cmsCIExyY wp;
 
     wp.x = xyY[0];
@@ -175,11 +175,11 @@ cmsCIExyY sgray_wp_cms()
     return wp;
 }
 
-cmsCIExyYTRIPLE adobergb_matrix_cms()
+static cmsCIExyYTRIPLE adobergb_matrix_cms()
 {
     cmsCIExyYTRIPLE m;
 
-    double * matrix = cmMatrixAdobeRgb();
+    double * matrix = cfCmMatrixAdobeRGB();
 
     m.Red.x = matrix[0];
     m.Red.y = matrix[1];
@@ -194,7 +194,7 @@ cmsCIExyYTRIPLE adobergb_matrix_cms()
     return m;
 }
 
-cmsHPROFILE adobergb_profile()
+static cmsHPROFILE adobergb_profile()
 {
     cmsHPROFILE adobergb;
 
@@ -218,7 +218,7 @@ cmsHPROFILE adobergb_profile()
     return adobergb;
 }
 
-cmsHPROFILE sgray_profile()
+static cmsHPROFILE sgray_profile()
 {
     cmsHPROFILE sgray;
 
@@ -238,19 +238,19 @@ cmsHPROFILE sgray_profile()
 
 
 #ifdef USE_LCMS1
-static int lcmsErrorHandler(int ErrorCode, const char *ErrorText)
+static int lcms_error_handler(int ErrorCode, const char *ErrorText)
 {
   return 1;
 }
 #else
-static void lcmsErrorHandler(cmsContext contextId, cmsUInt32Number ErrorCode,
+static void lcms_error_handler(cmsContext contextId, cmsUInt32Number ErrorCode,
    const char *ErrorText)
 {
   return;
 }
 #endif
 
-static void  handleRequiresPageRegion(pwgtoraster_doc_t*doc) {
+static void handle_requires_page_region(pwgtoraster_doc_t*doc) {
   ppd_choice_t *mf;
   ppd_choice_t *is;
   ppd_attr_t *rregions = NULL;
@@ -286,8 +286,8 @@ static void  handleRequiresPageRegion(pwgtoraster_doc_t*doc) {
   }
 }
 
-static int parseOpts(filter_data_t *data,
-		     void *parameters,
+static int parse_opts(cf_filter_data_t *data,
+		     cf_filter_out_format_t outformat,
 		     pwgtoraster_doc_t *doc)
 {
   int num_options = 0;
@@ -295,22 +295,13 @@ static int parseOpts(filter_data_t *data,
   char *profile = NULL;
   ppd_attr_t *attr;
   const char *val;
-  filter_logfunc_t log = data->logfunc;
+  cf_logfunc_t log = data->logfunc;
   void *ld = data ->logdata;
+  cups_cspace_t         cspace = (cups_cspace_t)(-1);
 
-  (void)parameters;
+  num_options = cfJoinJobOptionsAndAttrs(data, num_options, &options);
   
-  if (data->ppd)
-    doc->ppd = data->ppd;
-  else if (data->ppdfile)
-    doc->ppd = ppdOpenFile(data->ppdfile);
-
-  if (doc->ppd == NULL)
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-      "pwgtoraster: No PPD file is specified.");
-
-  options = data->options;
-  num_options = data->num_options;
+  doc->ppd = data->ppd;
 
   // Did the user explicitly request a certain page size? If not, overtake
   // the page size(s) from the input pages
@@ -320,12 +311,17 @@ static int parseOpts(filter_data_t *data,
      cupsGetOption("media-size", num_options, options) ||
      cupsGetOption("media-col", num_options, options));
 
+  // We can directly create CUPS Raster, PWG Raster, and Apple Raster but
+  // for PCLm we have to output CUPS Raster and feed it into cfFilterRasterToPDF()
+  cfRasterPrepareHeader(&(doc->outheader), data, outformat,
+			  outformat == CF_FILTER_OUT_FORMAT_PCLM ?
+			  CF_FILTER_OUT_FORMAT_CUPS_RASTER : outformat, 0, &cspace);
+
   if (doc->ppd) {
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "pwgtoraster: Using PPD file: %s", doc->ppd->nickname);
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterPWGToRaster: Using PPD file: %s", doc->ppd->nickname);
     ppdMarkOptions(doc->ppd,num_options,options);
-    handleRequiresPageRegion(doc);
-    ppdRasterInterpretPPD(&(doc->outheader),doc->ppd,num_options,options,0);
+    handle_requires_page_region(doc);
     attr = ppdFindAttr(doc->ppd,"pwgtorasterRenderingIntent",NULL);
     if (attr != NULL && attr->value != NULL) {
       if (strcasecmp(attr->value,"PERCEPTUAL") == 0) {
@@ -383,23 +379,23 @@ static int parseOpts(filter_data_t *data,
     }
 
     /* support the CUPS "cm-calibration" option */
-    doc->color_profile.cm_calibrate = cmGetCupsColorCalibrateMode(data, options, num_options);
+    doc->color_profile.cm_calibrate = cfCmGetCupsColorCalibrateMode(data, options, num_options);
 
-    if (doc->color_profile.cm_calibrate == CM_CALIBRATION_ENABLED)
+    if (doc->color_profile.cm_calibrate == CF_CM_CALIBRATION_ENABLED)
       doc->color_profile.cm_disabled = 1;
     else
-      doc->color_profile.cm_disabled = cmIsPrinterCmDisabled(data, data->printer);
+      doc->color_profile.cm_disabled = cfCmIsPrinterCmDisabled(data);
 
     if (!doc->color_profile.cm_disabled)
-      cmGetPrinterIccProfile(data, data->printer, &profile, doc->ppd);
+      cfCmGetPrinterIccProfile(data, &profile, doc->ppd);
 
     if (profile != NULL) {
       doc->color_profile.colorProfile = cmsOpenProfileFromFile(profile,"r");
       free(profile);
     }
   } else {
-#ifdef HAVE_CUPS_1_7
-    cupsRasterParseIPPOptions(&(doc->outheader), data, 0, 1);
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+      "cfFilterPWGToRaster: No PPD file is specified.");
     if (strcasecmp(doc->outheader.cupsRenderingIntent, "Perceptual") == 0) {
       doc->color_profile.renderingIntent = INTENT_PERCEPTUAL;
     } else if (strcasecmp(doc->outheader.cupsRenderingIntent, "Relative") == 0) {
@@ -409,27 +405,25 @@ static int parseOpts(filter_data_t *data,
     } else if (strcasecmp(doc->outheader.cupsRenderingIntent, "Absolute") == 0) {
       doc->color_profile.renderingIntent = INTENT_ABSOLUTE_COLORIMETRIC;
     }
-#else
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "pwgtoraster: No PPD file specified.");
-    return (1);
-#endif /* HAVE_CUPS_1_7 */
   }
   if ((val = cupsGetOption("print-color-mode", num_options, options)) != NULL
                            && !strncasecmp(val, "bi-level", 8))
     doc->bi_level = 1;
 
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "pwgtoraster: Page size %s: %s",
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterPWGToRaster: Page size %s: %s",
 	       doc->page_size_requested ? "requested" : "default",
 	       doc->outheader.cupsPageSizeName);
+
+  if (num_options)
+    cupsFreeOptions(num_options, options);
 
   return (0);
 }
 
-static unsigned char *reverseLine(unsigned char *src, unsigned char *dst,
+static unsigned char *reverse_line(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   unsigned char *p = src;
 
@@ -439,9 +433,9 @@ static unsigned char *reverseLine(unsigned char *src, unsigned char *dst,
   return src;
 }
 
-static unsigned char *reverseLineSwapByte(unsigned char *src,
+static unsigned char *reverse_line_swap_byte(unsigned char *src,
     unsigned char *dst, unsigned int row, unsigned int plane,
-    unsigned int pixels, unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+    unsigned int pixels, unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   unsigned char *bp = src+size-1;
   unsigned char *dp = dst;
@@ -453,65 +447,65 @@ static unsigned char *reverseLineSwapByte(unsigned char *src,
 }
 
 
-static unsigned char *reverseLineSwapBit(unsigned char *src,
+static unsigned char *reverse_line_swap_bit(unsigned char *src,
   unsigned char *dst, unsigned int row, unsigned int plane,
-  unsigned int pixels, unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+  unsigned int pixels, unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
-  dst = reverseOneBitLineSwap(src, dst, pixels, size);
+  dst = cfReverseOneBitLineSwap(src, dst, pixels, size);
   return dst;
 }
 
-static unsigned char *rgbToCMYKLine(unsigned char *src, unsigned char *dst,
+static unsigned char *rgb_to_cmyk_line(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
-  cupsImageRGBToCMYK(src,dst,pixels);
+  cfImageRGBToCMYK(src,dst,pixels);
   return dst;
 }
 
-static unsigned char *rgbToCMYKLineSwap(unsigned char *src, unsigned char *dst,
+static unsigned char *rgb_to_cmyk_line_swap(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   unsigned char *bp = src+(pixels-1)*3;
   unsigned char *dp = dst;
 
   for (unsigned int i = 0;i < pixels;i++, bp -= 3, dp += 4) {
-    cupsImageRGBToCMYK(bp,dp,1);
+    cfImageRGBToCMYK(bp,dp,1);
   }
   return dst;
 }
 
-static unsigned char *rgbToCMYLine(unsigned char *src, unsigned char *dst,
+static unsigned char *rgb_to_cmy_line(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
-  cupsImageRGBToCMY(src,dst,pixels);
+  cfImageRGBToCMY(src,dst,pixels);
   return dst;
 }
 
-static unsigned char *rgbToCMYLineSwap(unsigned char *src, unsigned char *dst,
+static unsigned char *rgb_to_cmy_line_swap(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   unsigned char *bp = src+size-3;
   unsigned char *dp = dst;
 
   for (unsigned int i = 0;i < pixels;i++, bp -= 3, dp += 3) {
-    cupsImageRGBToCMY(bp,dp,1);
+    cfImageRGBToCMY(bp,dp,1);
   }
   return dst;
 }
 
-static unsigned char *rgbToKCMYLine(unsigned char *src, unsigned char *dst,
+static unsigned char *rgb_to_kcmy_line(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   unsigned char *bp = src;
   unsigned char *dp = dst;
   unsigned char d;
 
-  cupsImageRGBToCMYK(src,dst,pixels);
+  cfImageRGBToCMYK(src,dst,pixels);
   /* CMYK to KCMY */
   for (unsigned int i = 0;i < pixels;i++, bp += 3, dp += 4) {
     d = dp[3];
@@ -523,16 +517,16 @@ static unsigned char *rgbToKCMYLine(unsigned char *src, unsigned char *dst,
   return dst;
 }
 
-static unsigned char *rgbToKCMYLineSwap(unsigned char *src, unsigned char *dst,
+static unsigned char *rgb_to_kcmy_line_swap(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   unsigned char *bp = src+(pixels-1)*3;
   unsigned char *dp = dst;
   unsigned char d;
 
   for (unsigned int i = 0;i < pixels;i++, bp -= 3, dp += 4) {
-    cupsImageRGBToCMYK(bp,dp,1);
+    cfImageRGBToCMYK(bp,dp,1);
     /* CMYK to KCMY */
     d = dp[3];
     dp[3] = dp[2];
@@ -543,17 +537,17 @@ static unsigned char *rgbToKCMYLineSwap(unsigned char *src, unsigned char *dst,
   return dst;
 }
 
-static unsigned char *lineNoop(unsigned char *src, unsigned char *dst,
+static unsigned char *line_no_op(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   /* do nothing */
   return src;
 }
 
-static unsigned char *lineSwap24(unsigned char *src, unsigned char *dst,
+static unsigned char *line_swap_24(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   unsigned char *bp = src+size-3;
   unsigned char *dp = dst;
@@ -566,9 +560,9 @@ static unsigned char *lineSwap24(unsigned char *src, unsigned char *dst,
   return dst;
 }
 
-static unsigned char *lineSwapByte(unsigned char *src, unsigned char *dst,
+static unsigned char *line_swap_byte(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t *doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t *doc, convert_cspace_func convertCSpace)
 {
   unsigned char *bp = src+size-1;
   unsigned char *dp = dst;
@@ -579,60 +573,60 @@ static unsigned char *lineSwapByte(unsigned char *src, unsigned char *dst,
   return dst;
 }
 
-static unsigned char *lineSwapBit(unsigned char *src, unsigned char *dst,
+static unsigned char *line_swap_bit(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
-  dst = reverseOneBitLine(src, dst, pixels, size);
+  dst = cfReverseOneBitLine(src, dst, pixels, size);
   return dst;
 }
 
-typedef struct _funcTable {
+typedef struct func_table_s {
   enum cups_cspace_e cspace;
   unsigned int bitsPerPixel;
   unsigned int bitsPerColor;
-  ConvertLineFunc convertLine;
+  convert_line_func convertLine;
   bool allocLineBuf;
-  ConvertLineFunc convertLineSwap;
+  convert_line_func convertLineSwap;
   bool allocLineBufSwap;
-} FuncTable;
+} func_table_t;
 
-static FuncTable specialCaseFuncs[] = {
-  {CUPS_CSPACE_K,8,8,reverseLine,false,reverseLineSwapByte,true},
-  {CUPS_CSPACE_K,1,1,reverseLine,false,reverseLineSwapBit,true},
-  {CUPS_CSPACE_GOLD,8,8,reverseLine,false,reverseLineSwapByte,true},
-  {CUPS_CSPACE_GOLD,1,1,reverseLine,false,reverseLineSwapBit,true},
-  {CUPS_CSPACE_SILVER,8,8,reverseLine,false,reverseLineSwapByte,true},
-  {CUPS_CSPACE_SILVER,1,1,reverseLine,false,reverseLineSwapBit,true},
-  {CUPS_CSPACE_CMYK,32,8,rgbToCMYKLine,true,rgbToCMYKLineSwap,true},
-  {CUPS_CSPACE_KCMY,32,8,rgbToKCMYLine,true,rgbToKCMYLineSwap,true},
-  {CUPS_CSPACE_CMY,24,8,rgbToCMYLine,true,rgbToCMYLineSwap,true},
-  {CUPS_CSPACE_RGB,24,8,lineNoop,false,lineSwap24,true},
-  {CUPS_CSPACE_SRGB,24,8,lineNoop,false,lineSwap24,true},
-  {CUPS_CSPACE_ADOBERGB,24,8,lineNoop,false,lineSwap24,true},
-  {CUPS_CSPACE_W,8,8,lineNoop,false,lineSwapByte,true},
-  {CUPS_CSPACE_W,1,1,lineNoop,false,lineSwapBit,true},
-  {CUPS_CSPACE_SW,8,8,lineNoop,false,lineSwapByte,true},
-  {CUPS_CSPACE_SW,1,1,lineNoop,false,lineSwapBit,true},
-  {CUPS_CSPACE_WHITE,8,8,lineNoop,false,lineSwapByte,true},
-  {CUPS_CSPACE_WHITE,1,1,lineNoop,false,lineSwapBit,true},
+static func_table_t specialCaseFuncs[] = {
+  {CUPS_CSPACE_K,8,8,reverse_line,false,reverse_line_swap_byte,true},
+  {CUPS_CSPACE_K,1,1,reverse_line,false,reverse_line_swap_bit,true},
+  {CUPS_CSPACE_GOLD,8,8,reverse_line,false,reverse_line_swap_byte,true},
+  {CUPS_CSPACE_GOLD,1,1,reverse_line,false,reverse_line_swap_bit,true},
+  {CUPS_CSPACE_SILVER,8,8,reverse_line,false,reverse_line_swap_byte,true},
+  {CUPS_CSPACE_SILVER,1,1,reverse_line,false,reverse_line_swap_bit,true},
+  {CUPS_CSPACE_CMYK,32,8,rgb_to_cmyk_line,true,rgb_to_cmyk_line_swap,true},
+  {CUPS_CSPACE_KCMY,32,8,rgb_to_kcmy_line,true,rgb_to_kcmy_line_swap,true},
+  {CUPS_CSPACE_CMY,24,8,rgb_to_cmy_line,true,rgb_to_cmy_line_swap,true},
+  {CUPS_CSPACE_RGB,24,8,line_no_op,false,line_swap_24,true},
+  {CUPS_CSPACE_SRGB,24,8,line_no_op,false,line_swap_24,true},
+  {CUPS_CSPACE_ADOBERGB,24,8,line_no_op,false,line_swap_24,true},
+  {CUPS_CSPACE_W,8,8,line_no_op,false,line_swap_byte,true},
+  {CUPS_CSPACE_W,1,1,line_no_op,false,line_swap_bit,true},
+  {CUPS_CSPACE_SW,8,8,line_no_op,false,line_swap_byte,true},
+  {CUPS_CSPACE_SW,1,1,line_no_op,false,line_swap_bit,true},
+  {CUPS_CSPACE_WHITE,8,8,line_no_op,false,line_swap_byte,true},
+  {CUPS_CSPACE_WHITE,1,1,line_no_op,false,line_swap_bit,true},
   {CUPS_CSPACE_RGB,0,0,NULL,false,NULL,false} /* end mark */
 };
 
-static unsigned char *convertCSpaceNone(unsigned char *src,
+static unsigned char *convert_cspace_none(unsigned char *src,
   unsigned char *pixelBuf, unsigned int x, unsigned int y, pwgtoraster_doc_t *doc)
 {
   return src;
 }
 
-static unsigned char *convertCSpaceWithProfiles(unsigned char *src,
+static unsigned char *convert_cspace_with_profiles(unsigned char *src,
   unsigned char *pixelBuf, unsigned int x, unsigned int y, pwgtoraster_doc_t *doc)
 {
   cmsDoTransform(doc->color_profile.colorTransform,src,pixelBuf,1);
   return pixelBuf;
 }
 
-static unsigned char *convertCSpaceXYZ8(unsigned char *src,
+static unsigned char *convert_cspace_xyz_8(unsigned char *src,
   unsigned char *pixelBuf, unsigned int x, unsigned int y, pwgtoraster_doc_t *doc)
 {
   double alab[3];
@@ -652,7 +646,7 @@ static unsigned char *convertCSpaceXYZ8(unsigned char *src,
   return pixelBuf;
 }
 
-static unsigned char *convertCSpaceXYZ16(unsigned char *src,
+static unsigned char *convert_cspace_xyz_16(unsigned char *src,
   unsigned char *pixelBuf, unsigned int x, unsigned int y, pwgtoraster_doc_t *doc)
 {
   double alab[3];
@@ -673,7 +667,7 @@ static unsigned char *convertCSpaceXYZ16(unsigned char *src,
   return pixelBuf;
 }
 
-static unsigned char *convertCSpaceLab8(unsigned char *src,
+static unsigned char *convert_cspace_lab_8(unsigned char *src,
   unsigned char *pixelBuf, unsigned int x, unsigned int y, pwgtoraster_doc_t *doc)
 {
   double lab[3];
@@ -684,7 +678,7 @@ static unsigned char *convertCSpaceLab8(unsigned char *src,
   return pixelBuf;
 }
 
-static unsigned char *convertCSpaceLab16(unsigned char *src,
+static unsigned char *convert_cspace_lab_16(unsigned char *src,
   unsigned char *pixelBuf, unsigned int x, unsigned int y, pwgtoraster_doc_t *doc)
 {
   double lab[3];
@@ -696,7 +690,7 @@ static unsigned char *convertCSpaceLab16(unsigned char *src,
   return pixelBuf;
 }
 
-static unsigned char *RGB8toRGBA(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *rgb_8_to_rgba(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t* doc)
 {
   unsigned char *dp = pixelBuf;
@@ -708,37 +702,37 @@ static unsigned char *RGB8toRGBA(unsigned char *src, unsigned char *pixelBuf,
   return pixelBuf;
 }
 
-static unsigned char *RGB8toRGBW(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *rgb_8_to_rgbw(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t* doc)
 {
   unsigned char cmyk[4];
   unsigned char *dp = pixelBuf;
 
-  cupsImageRGBToCMYK(src,cmyk,1);
+  cfImageRGBToCMYK(src,cmyk,1);
   for (int i = 0;i < 4;i++) {
     *dp++ = ~cmyk[i];
   }
   return pixelBuf;
 }
 
-static unsigned char *RGB8toCMYK(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *rgb_8_to_cmyk(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t* doc)
 {
-  cupsImageRGBToCMYK(src,pixelBuf,1);
+  cfImageRGBToCMYK(src,pixelBuf,1);
   return pixelBuf;
 }
 
-static unsigned char *RGB8toCMY(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *rgb_8_to_cmy(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t* doc)
 {
-  cupsImageRGBToCMY(src,pixelBuf,1);
+  cfImageRGBToCMY(src,pixelBuf,1);
   return pixelBuf;
 }
 
-static unsigned char *RGB8toYMC(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *rgb_8_to_ymc(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t* doc)
 {
-  cupsImageRGBToCMY(src,pixelBuf,1);
+  cfImageRGBToCMY(src,pixelBuf,1);
   /* swap C and Y */
   unsigned char d = pixelBuf[0];
   pixelBuf[0] = pixelBuf[2];
@@ -746,10 +740,10 @@ static unsigned char *RGB8toYMC(unsigned char *src, unsigned char *pixelBuf,
   return pixelBuf;
 }
 
-static unsigned char *RGB8toKCMY(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *rgb_8_to_kcmy(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t* doc)
 {
-  cupsImageRGBToCMYK(src,pixelBuf,1);
+  cfImageRGBToCMYK(src,pixelBuf,1);
   unsigned char d = pixelBuf[3];
   pixelBuf[3] = pixelBuf[2];
   pixelBuf[2] = pixelBuf[1];
@@ -758,16 +752,16 @@ static unsigned char *RGB8toKCMY(unsigned char *src, unsigned char *pixelBuf,
   return pixelBuf;
 }
 
-static unsigned char *RGB8toKCMYcmTemp(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *rgb_8_to_kcmycm_temp(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t* doc)
 {
-  return RGB8toKCMYcm(src, pixelBuf, x, y);
+  return cfRGB8toKCMYcm(src, pixelBuf, x, y);
 }
 
-static unsigned char *RGB8toYMCK(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *rgb_8_to_ymck(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t* doc)
 {
-  cupsImageRGBToCMYK(src,pixelBuf,1);
+  cfImageRGBToCMYK(src,pixelBuf,1);
   /* swap C and Y */
   unsigned char d = pixelBuf[0];
   pixelBuf[0] = pixelBuf[2];
@@ -775,16 +769,16 @@ static unsigned char *RGB8toYMCK(unsigned char *src, unsigned char *pixelBuf,
   return pixelBuf;
 }
 
-static unsigned char *W8toK8(unsigned char *src, unsigned char *pixelBuf,
+static unsigned char *w_8_to_k_8(unsigned char *src, unsigned char *pixelBuf,
   unsigned int x, unsigned int y, pwgtoraster_doc_t *doc)
 {
   *pixelBuf = ~(*src);
   return pixelBuf;
 }
 
-static unsigned char *convertLineChunked(unsigned char *src, unsigned char *dst,
+static unsigned char *convert_line_chunked(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t *doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t *doc, convert_cspace_func convertCSpace)
 {
   /* Assumed that BitsPerColor is 8 */
   for (unsigned int i = 0;i < pixels;i++) {
@@ -793,15 +787,15 @@ static unsigned char *convertLineChunked(unsigned char *src, unsigned char *dst,
       unsigned char *pb;
 
       pb = convertCSpace(src+i*(doc->outputNumColors),pixelBuf1,i,row, doc);
-      pb = convertbits(pb,pixelBuf2,i,row, doc->outheader.cupsNumColors, doc->bitspercolor);
-      writepixel(dst,0,i,pb, doc->outheader.cupsNumColors, doc->outheader.cupsBitsPerColor, doc->outheader.cupsColorOrder);
+      pb = cfConvertBits(pb,pixelBuf2,i,row, doc->outheader.cupsNumColors, doc->bitspercolor);
+      cfWritePixel(dst,0,i,pb, doc->outheader.cupsNumColors, doc->outheader.cupsBitsPerColor, doc->outheader.cupsColorOrder);
   }
   return dst;
 }
 
-static unsigned char *convertLineChunkedSwap(unsigned char *src,
+static unsigned char *convert_line_chunked_swap(unsigned char *src,
      unsigned char *dst, unsigned int row, unsigned int plane,
-     unsigned int pixels, unsigned int size, pwgtoraster_doc_t* doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int pixels, unsigned int size, pwgtoraster_doc_t* doc, convert_cspace_func convertCSpace)
 {
   /* Assumed that BitsPerColor is 8 */
   for (unsigned int i = 0;i < pixels;i++) {
@@ -810,15 +804,15 @@ static unsigned char *convertLineChunkedSwap(unsigned char *src,
       unsigned char *pb;
 
       pb = convertCSpace(src+(pixels-i-1)*(doc->outputNumColors),pixelBuf1,i,row, doc);
-      pb = convertbits(pb,pixelBuf2,i,row, doc->outheader.cupsNumColors, doc->bitspercolor);
-      writepixel(dst,0,i,pb, doc->outheader.cupsNumColors, doc->outheader.cupsBitsPerColor, doc->outheader.cupsColorOrder);
+      pb = cfConvertBits(pb,pixelBuf2,i,row, doc->outheader.cupsNumColors, doc->bitspercolor);
+      cfWritePixel(dst,0,i,pb, doc->outheader.cupsNumColors, doc->outheader.cupsBitsPerColor, doc->outheader.cupsColorOrder);
   }
   return dst;
 }
 
-static unsigned char *convertLinePlane(unsigned char *src, unsigned char *dst,
+static unsigned char *convert_line_plane(unsigned char *src, unsigned char *dst,
      unsigned int row, unsigned int plane, unsigned int pixels,
-     unsigned int size, pwgtoraster_doc_t *doc, ConvertCSpaceFunc convertCSpace)
+     unsigned int size, pwgtoraster_doc_t *doc, convert_cspace_func convertCSpace)
 {
   /* Assumed that BitsPerColor is 8 */
   for (unsigned int i = 0;i < pixels;i++) {
@@ -827,15 +821,15 @@ static unsigned char *convertLinePlane(unsigned char *src, unsigned char *dst,
       unsigned char *pb;
 
       pb = convertCSpace(src+i*(doc->outputNumColors),pixelBuf1,i,row, doc);
-      pb = convertbits(pb,pixelBuf2,i,row, doc->outheader.cupsNumColors, doc->bitspercolor);
-      writepixel(dst,plane,i,pb, doc->outheader.cupsNumColors, doc->outheader.cupsBitsPerColor, doc->outheader.cupsColorOrder);
+      pb = cfConvertBits(pb,pixelBuf2,i,row, doc->outheader.cupsNumColors, doc->bitspercolor);
+      cfWritePixel(dst,plane,i,pb, doc->outheader.cupsNumColors, doc->outheader.cupsBitsPerColor, doc->outheader.cupsColorOrder);
   }
   return dst;
 }
 
-static unsigned char *convertLinePlaneSwap(unsigned char *src,
+static unsigned char *convert_line_plane_swap(unsigned char *src,
     unsigned char *dst, unsigned int row, unsigned int plane,
-    unsigned int pixels, unsigned int size, pwgtoraster_doc_t *doc, ConvertCSpaceFunc convertCSpace)
+    unsigned int pixels, unsigned int size, pwgtoraster_doc_t *doc, convert_cspace_func convertCSpace)
 {
   for (unsigned int i = 0;i < pixels;i++) {
       unsigned char pixelBuf1[MAX_BYTES_PER_PIXEL];
@@ -843,14 +837,14 @@ static unsigned char *convertLinePlaneSwap(unsigned char *src,
       unsigned char *pb;
 
       pb = convertCSpace(src+(pixels-i-1)*(doc->outputNumColors),pixelBuf1,i,row, doc);
-      pb = convertbits(pb,pixelBuf2,i,row, doc->outheader.cupsNumColors, doc->bitspercolor);
-      writepixel(dst,plane,i,pb, doc->outheader.cupsNumColors, doc->outheader.cupsBitsPerColor, doc->outheader.cupsColorOrder);
+      pb = cfConvertBits(pb,pixelBuf2,i,row, doc->outheader.cupsNumColors, doc->bitspercolor);
+      cfWritePixel(dst,plane,i,pb, doc->outheader.cupsNumColors, doc->outheader.cupsBitsPerColor, doc->outheader.cupsColorOrder);
   }
   return dst;
 }
 
-/* handle special cases which are appear in gutenprint's PPDs. */
-static bool selectSpecialCase(pwgtoraster_doc_t* doc, conversion_function_t* convert)
+/* Handle special cases which appear in Gutenprint's PPDs */
+static bool select_special_case(pwgtoraster_doc_t* doc, conversion_function_t* convert)
 {
   int i;
 
@@ -867,7 +861,7 @@ static bool selectSpecialCase(pwgtoraster_doc_t* doc, conversion_function_t* con
   return false;
 }
 
-static unsigned int getCMSColorSpaceType(cmsColorSpaceSignature cs)
+static unsigned int get_cms_color_space_type(cmsColorSpaceSignature cs)
 {
     switch (cs) {
     case cmsSigXYZData:
@@ -924,10 +918,10 @@ static unsigned int getCMSColorSpaceType(cmsColorSpaceSignature cs)
 }
 
 /* select convertLine function */
-static int selectConvertFunc(cups_raster_t *raster,
+static int select_convert_func(cups_raster_t *raster,
 			     pwgtoraster_doc_t* doc,
 			     conversion_function_t *convert,
-			     filter_logfunc_t log,
+			     cf_logfunc_t log,
 			     void* ld)
 {
   doc->bitspercolor = doc->outheader.cupsBitsPerColor;
@@ -935,7 +929,7 @@ static int selectConvertFunc(cups_raster_t *raster,
   if ((doc->color_profile.colorProfile == NULL || doc->color_profile.outputColorProfile == doc->color_profile.colorProfile)
       && (doc->outheader.cupsColorOrder == CUPS_ORDER_CHUNKED
        || doc->outheader.cupsNumColors == 1)) {
-    if (selectSpecialCase(doc, convert))
+    if (select_special_case(doc, convert))
       return (0);
   }
 
@@ -943,14 +937,14 @@ static int selectConvertFunc(cups_raster_t *raster,
   case CUPS_ORDER_BANDED:
   case CUPS_ORDER_PLANAR:
     if (doc->outheader.cupsNumColors > 1) {
-      convert->convertLineEven = convertLinePlaneSwap;
-      convert->convertLineOdd = convertLinePlane;
+      convert->convertLineEven = convert_line_plane_swap;
+      convert->convertLineOdd = convert_line_plane;
       break;
     }
   default:
   case CUPS_ORDER_CHUNKED:
-    convert->convertLineEven = convertLineChunkedSwap;
-    convert->convertLineOdd = convertLineChunked;
+    convert->convertLineEven = convert_line_chunked_swap;
+    convert->convertLineOdd = convert_line_chunked;
     break;
   }
   convert->convertLineEven = convert->convertLineOdd;
@@ -977,24 +971,24 @@ static int selectConvertFunc(cups_raster_t *raster,
     case CUPS_CSPACE_ICCE:
     case CUPS_CSPACE_ICCF:
       if (doc->outheader.cupsBitsPerColor == 8) {
-        convert->convertCSpace = convertCSpaceLab8;
+        convert->convertCSpace = convert_cspace_lab_8;
       } else {
         /* 16 bits */
-        convert->convertCSpace = convertCSpaceLab16;
+        convert->convertCSpace = convert_cspace_lab_16;
       }
       bytes = 0; /* double */
       break;
     case CUPS_CSPACE_CIEXYZ:
       if (doc->outheader.cupsBitsPerColor == 8) {
-        convert->convertCSpace = convertCSpaceXYZ8;
+        convert->convertCSpace = convert_cspace_xyz_8;
       } else {
         /* 16 bits */
-        convert->convertCSpace = convertCSpaceXYZ16;
+        convert->convertCSpace = convert_cspace_xyz_16;
       }
       bytes = 0; /* double */
       break;
     default:
-      convert->convertCSpace = convertCSpaceWithProfiles;
+      convert->convertCSpace = convert_cspace_with_profiles;
       bytes = doc->outheader.cupsBitsPerColor/8;
       break;
     }
@@ -1003,7 +997,7 @@ static int selectConvertFunc(cups_raster_t *raster,
       doc->color_profile.outputColorProfile = cmsCreate_sRGBProfile();
     }
     unsigned int dcst =
-      getCMSColorSpaceType(cmsGetColorSpace(doc->color_profile.colorProfile));
+      get_cms_color_space_type(cmsGetColorSpace(doc->color_profile.colorProfile));
     if ((doc->color_profile.colorTransform =
 	 cmsCreateTransform(doc->color_profile.outputColorProfile,
 			    COLORSPACE_SH(PT_RGB) |CHANNELS_SH(3) | BYTES_SH(1),
@@ -1012,8 +1006,8 @@ static int selectConvertFunc(cups_raster_t *raster,
 			    CHANNELS_SH(doc->outheader.cupsNumColors) |
 			    BYTES_SH(bytes),
 			    doc->color_profile.renderingIntent,0)) == 0) {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pwgtoraster: Can't create color transform.");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPWGToRaster: Can't create color transform.");
       return (1);
     }
   } else {
@@ -1036,56 +1030,56 @@ static int selectConvertFunc(cups_raster_t *raster,
     case CUPS_CSPACE_ICCE:
     case CUPS_CSPACE_ICCF:
     case CUPS_CSPACE_CIEXYZ:
-      convert->convertCSpace = convertCSpaceNone;
+      convert->convertCSpace = convert_cspace_none;
       break;
     case CUPS_CSPACE_CMY:
-      convert->convertCSpace = RGB8toCMY;
+      convert->convertCSpace = rgb_8_to_cmy;
       break;
     case CUPS_CSPACE_YMC:
-      convert->convertCSpace = RGB8toYMC;
+      convert->convertCSpace = rgb_8_to_ymc;
       break;
     case CUPS_CSPACE_CMYK:
-      convert->convertCSpace = RGB8toCMYK;
+      convert->convertCSpace = rgb_8_to_cmyk;
       break;
     case CUPS_CSPACE_KCMY:
-      convert->convertCSpace = RGB8toKCMY;
+      convert->convertCSpace = rgb_8_to_kcmy;
       break;
     case CUPS_CSPACE_KCMYcm:
       if (doc->outheader.cupsBitsPerColor > 1) {
-        convert->convertCSpace = RGB8toKCMY;
+        convert->convertCSpace = rgb_8_to_kcmy;
       } else {
-        convert->convertCSpace = RGB8toKCMYcmTemp;
+        convert->convertCSpace = rgb_8_to_kcmycm_temp;
       }
       break;
     case CUPS_CSPACE_GMCS:
     case CUPS_CSPACE_GMCK:
     case CUPS_CSPACE_YMCK:
-      convert->convertCSpace = RGB8toYMCK;
+      convert->convertCSpace = rgb_8_to_ymck;
       break;
     case CUPS_CSPACE_RGBW:
-      convert->convertCSpace = RGB8toRGBW;
+      convert->convertCSpace = rgb_8_to_rgbw;
       break;
     case CUPS_CSPACE_RGBA:
-      convert->convertCSpace = RGB8toRGBA;
+      convert->convertCSpace = rgb_8_to_rgba;
       break;
     case CUPS_CSPACE_RGB:
     case CUPS_CSPACE_SRGB:
     case CUPS_CSPACE_ADOBERGB:
-      convert->convertCSpace = convertCSpaceNone;
+      convert->convertCSpace = convert_cspace_none;
       break;
     case CUPS_CSPACE_W:
     case CUPS_CSPACE_SW:
     case CUPS_CSPACE_WHITE:
-      convert->convertCSpace = convertCSpaceNone;
+      convert->convertCSpace = convert_cspace_none;
       break;
     case CUPS_CSPACE_K:
     case CUPS_CSPACE_GOLD:
     case CUPS_CSPACE_SILVER:
-      convert->convertCSpace = W8toK8;
+      convert->convertCSpace = w_8_to_k_8;
       break;
     default:
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pwgtoraster: Specified ColorSpace is not supported");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPWGToRaster: Specified ColorSpace is not supported");
       return (1);
       break;
     }
@@ -1094,19 +1088,19 @@ static int selectConvertFunc(cups_raster_t *raster,
   if (doc->outheader.cupsBitsPerColor == 1 &&
      (doc->outheader.cupsNumColors == 1 ||
      doc->outheader.cupsColorSpace == CUPS_CSPACE_KCMYcm ))
-    doc->bitspercolor = 0; /*Do not convertbits*/
+    doc->bitspercolor = 0; /* Do not convert the bits */
 
   return (0);
 }
 
-static bool outPage(pwgtoraster_doc_t *doc,
+static bool out_page(pwgtoraster_doc_t *doc,
 		    int pageNo,
 		    cups_raster_t *inras,
 		    cups_raster_t *outras,
 		    conversion_function_t *convert,
-		    filter_logfunc_t log,
+		    cf_logfunc_t log,
 		    void *ld,
-		    filter_iscanceledfunc_t iscanceled,
+		    cf_filter_iscanceledfunc_t iscanceled,
 		    void *icd)
 {
   int i, j;
@@ -1120,7 +1114,7 @@ static bool outPage(pwgtoraster_doc_t *doc,
   int next_line_read = 0;
   unsigned int y = 0, yin = 0;
   unsigned char *bp = NULL;
-  ConvertLineFunc convertLine;
+  convert_line_func convertLine;
   unsigned char *lineBuf = NULL;
   unsigned char *dp;
   unsigned int inlineoffset,     // Offset where to start in input line (bytes)
@@ -1138,54 +1132,61 @@ static bool outPage(pwgtoraster_doc_t *doc,
   if (iscanceled && iscanceled(icd))
   {
     // Canceled
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster: Job canceled on input page %d", pageNo);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster: Job canceled on input page %d", pageNo);
     return (false);
   }
 
   if (!cupsRasterReadHeader2(inras, &(doc->inheader)))
   {
     // Done
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster: Job completed");
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster: Job completed");
     return (false);
   }
 
-  if (strcasecmp(doc->inheader.MediaClass, "PwgRaster") != 0)
+  if (doc->inheader.ImagingBoundingBox[0] ||
+      doc->inheader.ImagingBoundingBox[1] ||
+      doc->inheader.ImagingBoundingBox[2] ||
+      doc->inheader.ImagingBoundingBox[3])
   {
-    // Not PWG Raster
-    log(ld, FILTER_LOGLEVEL_ERROR,
-	"pwgtoraster: Input page %d is not PWG Raster", pageNo);
+    // Only CUPS Raster (not supported as input format by this filter
+    // function) defines margins and so an ImagingBoundingBox, for PWG
+    // Raster and Apple Raster (the input formats supported by this
+    // filter function) these values are all zero. With at least one not
+    // zero we consider the input not supported.
+    log(ld, CF_LOGLEVEL_ERROR,
+	"cfFilterPWGToRaster: Input page %d is not PWG or Apple Raster", pageNo);
     return (false);
   }
   
   if (log) {
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster: Input page %d", pageNo);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   HWResolution = [ %d %d ]",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster: Input page %d", pageNo);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   HWResolution = [ %d %d ]",
 	doc->inheader.HWResolution[0], doc->inheader.HWResolution[1]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   PageSize = [ %d %d ]",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   PageSize = [ %d %d ]",
 	doc->inheader.PageSize[0], doc->inheader.PageSize[1]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsWidth = %d", doc->inheader.cupsWidth);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsHeight = %d", doc->inheader.cupsHeight);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBitsPerColor = %d", doc->inheader.cupsBitsPerColor);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBitsPerPixel = %d", doc->inheader.cupsBitsPerPixel);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBytesPerLine = %d", doc->inheader.cupsBytesPerLine);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsColorOrder = %d", doc->inheader.cupsColorOrder);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsColorSpace = %d", doc->inheader.cupsColorSpace);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsCompression = %d", doc->inheader.cupsCompression);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsPageSizeName = %s", doc->inheader.cupsPageSizeName);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsWidth = %d", doc->inheader.cupsWidth);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsHeight = %d", doc->inheader.cupsHeight);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBitsPerColor = %d", doc->inheader.cupsBitsPerColor);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBitsPerPixel = %d", doc->inheader.cupsBitsPerPixel);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBytesPerLine = %d", doc->inheader.cupsBytesPerLine);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsColorOrder = %d", doc->inheader.cupsColorOrder);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsColorSpace = %d", doc->inheader.cupsColorSpace);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsCompression = %d", doc->inheader.cupsCompression);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsPageSizeName = %s", doc->inheader.cupsPageSizeName);
   }
 
   if (!doc->page_size_requested)
@@ -1198,9 +1199,11 @@ static bool outPage(pwgtoraster_doc_t *doc,
   memset(margins, 0, sizeof(margins));
   if (doc->ppd)
   {
-    
     ppdRasterMatchPPDSize(&(doc->outheader), doc->ppd, margins,
 			  paperdimensions, &imageable_area_fit, &landscape_fit);
+    if (doc->outheader.ImagingBoundingBox[3] == 0)
+      for (i = 0; i < 4; i ++)
+	margins[i] = 0.0;
   }
   else
   {
@@ -1251,14 +1254,17 @@ static bool outPage(pwgtoraster_doc_t *doc,
     doc->outheader.Margins[i] = margins[i] + 0.5;
   }
 
-  doc->outheader.cupsImagingBBox[0] = margins[0];
-  doc->outheader.cupsImagingBBox[1] = margins[1];
-  doc->outheader.cupsImagingBBox[2] = paperdimensions[0] - margins[2];
-  doc->outheader.cupsImagingBBox[3] = paperdimensions[1] - margins[3];
+  if (doc->outheader.ImagingBoundingBox[3] != 0)
+  {
+    doc->outheader.cupsImagingBBox[0] = margins[0];
+    doc->outheader.cupsImagingBBox[1] = margins[1];
+    doc->outheader.cupsImagingBBox[2] = paperdimensions[0] - margins[2];
+    doc->outheader.cupsImagingBBox[3] = paperdimensions[1] - margins[3];
 
-  for (i = 0; i < 4; i ++)
-    doc->outheader.ImagingBoundingBox[i] =
-      (unsigned int)(doc->outheader.cupsImagingBBox[i] + 0.5);
+    for (i = 0; i < 4; i ++)
+      doc->outheader.ImagingBoundingBox[i] =
+	(unsigned int)(doc->outheader.cupsImagingBBox[i] + 0.5);
+  }
 
   doc->bytesPerLine = doc->outheader.cupsBytesPerLine =
     (doc->outheader.cupsBitsPerPixel *
@@ -1267,62 +1273,67 @@ static bool outPage(pwgtoraster_doc_t *doc,
     doc->outheader.cupsBytesPerLine *= doc->outheader.cupsNumColors;
 
   if (!cupsRasterWriteHeader2(outras, &(doc->outheader))) {
-    if (log) log(ld,FILTER_LOGLEVEL_ERROR,
-		 "pwgtoraster: Can't write page %d header", pageNo);
+    if (log) log(ld,CF_LOGLEVEL_ERROR,
+		 "cfFilterPWGToRaster: Can't write page %d header", pageNo);
     return (false);
   }
 
   if (log) {
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster: Output page %d", pageNo);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   Duplex = %d", doc->outheader.Duplex);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   HWResolution = [ %d %d ]",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster: Output page %d", pageNo);
+    if (doc->outheader.ImagingBoundingBox[3] > 0)
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   Duplex = %d", doc->outheader.Duplex);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   HWResolution = [ %d %d ]",
 	doc->outheader.HWResolution[0], doc->outheader.HWResolution[1]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   ImagingBoundingBox = [ %d %d %d %d ]",
-	doc->outheader.ImagingBoundingBox[0],
-	doc->outheader.ImagingBoundingBox[1],
-	doc->outheader.ImagingBoundingBox[2],
-	doc->outheader.ImagingBoundingBox[3]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   Margins = [ %d %d ]",
-	doc->outheader.Margins[0], doc->outheader.Margins[1]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   ManualFeed = %d", doc->outheader.ManualFeed);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   MediaPosition = %d", doc->outheader.MediaPosition);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   NumCopies = %d", doc->outheader.NumCopies);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   Orientation = %d", doc->outheader.Orientation);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   PageSize = [ %d %d ]",
+    if (doc->outheader.ImagingBoundingBox[3] > 0)
+    {
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   ImagingBoundingBox = [ %d %d %d %d ]",
+	  doc->outheader.ImagingBoundingBox[0],
+	  doc->outheader.ImagingBoundingBox[1],
+	  doc->outheader.ImagingBoundingBox[2],
+	  doc->outheader.ImagingBoundingBox[3]);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   Margins = [ %d %d ]",
+	  doc->outheader.Margins[0], doc->outheader.Margins[1]);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   ManualFeed = %d", doc->outheader.ManualFeed);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   MediaPosition = %d", doc->outheader.MediaPosition);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   NumCopies = %d", doc->outheader.NumCopies);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   Orientation = %d", doc->outheader.Orientation);
+    }
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   PageSize = [ %d %d ]",
 	doc->outheader.PageSize[0], doc->outheader.PageSize[1]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsWidth = %d", doc->outheader.cupsWidth);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsHeight = %d", doc->outheader.cupsHeight);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsMediaType = %d", doc->outheader.cupsMediaType);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBitsPerColor = %d",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsWidth = %d", doc->outheader.cupsWidth);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsHeight = %d", doc->outheader.cupsHeight);
+    if (doc->outheader.ImagingBoundingBox[3] > 0)
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   cupsMediaType = %d", doc->outheader.cupsMediaType);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBitsPerColor = %d",
 	doc->outheader.cupsBitsPerColor);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBitsPerPixel = %d",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBitsPerPixel = %d",
 	doc->outheader.cupsBitsPerPixel);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBytesPerLine = %d",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBytesPerLine = %d",
 	doc->outheader.cupsBytesPerLine);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsColorOrder = %d", doc->outheader.cupsColorOrder);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsColorSpace = %d", doc->outheader.cupsColorSpace);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsCompression = %d", doc->outheader.cupsCompression);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsPageSizeName = %s", doc->outheader.cupsPageSizeName);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsColorOrder = %d", doc->outheader.cupsColorOrder);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsColorSpace = %d", doc->outheader.cupsColorSpace);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsCompression = %d", doc->outheader.cupsCompression);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsPageSizeName = %s", doc->outheader.cupsPageSizeName);
   }
   
   // write page image
@@ -1341,7 +1352,7 @@ static bool outPage(pwgtoraster_doc_t *doc,
   // setpagedevice" or "<</cupsColorOrder 1 /cupsColorSpace 8
   // /cupsCompression 2>> setpagedevice". The CUPS filters collect all
   // of the selected ones and interpret them with a mini PostScript
-  // interpreter (ppdRaterInterpretPPD() in libppd) to generate the
+  // interpreter (ppdRasterInterpretPPD() in libppd) to generate the
   // CUPS Raster header (data structure describing the raster format)
   // for the page.
   //
@@ -1362,8 +1373,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
 
     if (doc->outheader.HWResolution[i] == doc->inheader.HWResolution[i])
     {
-      log(ld, FILTER_LOGLEVEL_DEBUG,
-	  "pwgtoraster: %s resolution: %d dpi",
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster: %s resolution: %d dpi",
 	  i == 0 ? "Horizontal" : "Vertical", doc->inheader.HWResolution[i]);
       continue;
     }
@@ -1372,8 +1383,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
     {
       if (doc->outheader.HWResolution[i] % doc->inheader.HWResolution[i])
       {
-	log(ld, FILTER_LOGLEVEL_ERROR,
-	    "pwgtoraster: %s output resolution %d dpi is not an integer multiple of %s input resolution %d dpi",
+	log(ld, CF_LOGLEVEL_ERROR,
+	    "cfFilterPWGToRaster: %s output resolution %d dpi is not an integer multiple of %s input resolution %d dpi",
 	    i == 0 ? "Horizontal" : "Vertical", doc->outheader.HWResolution[i],
 	    i == 0 ? "horizontal" : "vertical", doc->inheader.HWResolution[i]);
 	return (false);
@@ -1382,8 +1393,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
       {
 	res_up_factor[i] =
 	  doc->outheader.HWResolution[i] / doc->inheader.HWResolution[i];
-	log(ld, FILTER_LOGLEVEL_DEBUG,
-	    "pwgtoraster: %s input resolution: %d dpi; %s output resolution: %d dpi -> Raising by factor %d",
+	log(ld, CF_LOGLEVEL_DEBUG,
+	    "cfFilterPWGToRaster: %s input resolution: %d dpi; %s output resolution: %d dpi -> Raising by factor %d",
 	    i == 0 ? "Horizontal" : "Vertical", doc->inheader.HWResolution[i],
 	    i == 0 ? "Horizontal" : "Vertical", doc->outheader.HWResolution[i],
 	    res_up_factor[i]);
@@ -1393,8 +1404,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
     {
       if (doc->inheader.HWResolution[i] % doc->outheader.HWResolution[i])
       {
-	log(ld, FILTER_LOGLEVEL_ERROR,
-	    "pwgtoraster: %s input resolution %d dpi is not an integer multiple of %s output resolution %d dpi",
+	log(ld, CF_LOGLEVEL_ERROR,
+	    "cfFilterPWGToRaster: %s input resolution %d dpi is not an integer multiple of %s output resolution %d dpi",
 	    i == 0 ? "Horizontal" : "Vertical", doc->inheader.HWResolution[i],
 	    i == 0 ? "horizontal" : "vertical", doc->outheader.HWResolution[i]);
 	return (false);
@@ -1403,8 +1414,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
       {
 	res_down_factor[i] =
 	  doc->inheader.HWResolution[i] / doc->outheader.HWResolution[i];
-	log(ld, FILTER_LOGLEVEL_DEBUG,
-	    "pwgtoraster: %s input resolution: %d dpi; %s output resolution: %d dpi -> Reducing by factor %d",
+	log(ld, CF_LOGLEVEL_DEBUG,
+	    "cfFilterPWGToRaster: %s input resolution: %d dpi; %s output resolution: %d dpi -> Reducing by factor %d",
 	    i == 0 ? "Horizontal" : "Vertical", doc->inheader.HWResolution[i],
 	    i == 0 ? "Horizontal" : "Vertical", doc->outheader.HWResolution[i],
 	    res_down_factor[i]);
@@ -1435,8 +1446,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
   }
   else
   {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "pwgtoraster: Unsupported input color space: Number of colors: %d; Bits per color: %d.",
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterPWGToRaster: Unsupported input color space: Number of colors: %d; Bits per color: %d.",
 		 doc->inheader.cupsNumColors, doc->inheader.cupsBitsPerColor);
     return false;
   }
@@ -1465,8 +1476,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
 
   if (input_color_mode != color_mode_needed)
   {
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "pwgtoraster: Need to pre-convert input from %s to %s",
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterPWGToRaster: Need to pre-convert input from %s to %s",
 		 (input_color_mode == 0 ? "1-bit mono" :
 		  (input_color_mode == 1 ? "8-bit gray" :
 		   "8-bit RGB")),
@@ -1476,8 +1487,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
   }
   else
   {
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "pwgtoraster: Input color mode: %s",
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterPWGToRaster: Input color mode: %s",
 		 (input_color_mode == 0 ? "1-bit mono" :
 		  (input_color_mode == 1 ? "8-bit gray" :
 		   "8-bit RGB")));
@@ -1543,9 +1554,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
   // This facility also fixes rounding errors which lead to the input
   // raster to be a few pixels too small for the output.
 
-  if (doc->page_size_requested &&
-      (doc->outheader.PageSize[0] > doc->inheader.PageSize[0] ||
-       doc->outheader.PageSize[1] > doc->inheader.PageSize[1]))
+  if (doc->outheader.PageSize[0] > doc->inheader.PageSize[0] ||
+      doc->outheader.PageSize[1] > doc->inheader.PageSize[1])
   {
     int extra_points,
         min_overspray_duplicate_after_pixels = INT_MAX;
@@ -1553,8 +1563,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
     if (doc->outheader.PageSize[0] >= 2 * doc->inheader.PageSize[0] ||
 	doc->outheader.PageSize[1] >= 2 * doc->inheader.PageSize[1])
     {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pwgtoraster: Difference between input and output page dimensions too large, probably the input has a wrong page size");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPWGToRaster: Difference between input and output page dimensions too large, probably the input has a wrong page size");
       goto out;
     }
 
@@ -1576,14 +1586,14 @@ static bool outPage(pwgtoraster_doc_t *doc,
     if  (abs(doc->outheader.PageSize[0] - doc->inheader.PageSize[0]) > 2 ||
 	 abs(doc->outheader.PageSize[1] - doc->inheader.PageSize[1]) > 2)
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pwgtoraster: Output page dimensions are larger for borderless printing with overspray, inserting one extra pixel after each %d pixels",
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPWGToRaster: Output page dimensions are larger for borderless printing with overspray, inserting one extra pixel after each %d pixels",
 		   overspray_duplicate_after_pixels);
     }
     else
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "pwgtoraster: Output page dimensions are larger than input page dimensions due to rounding error, inserting one extra pixel after each %d pixels",
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterPWGToRaster: Output page dimensions are larger than input page dimensions due to rounding error, inserting one extra pixel after each %d pixels",
 		   overspray_duplicate_after_pixels);
     }
   }
@@ -1599,8 +1609,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
 				   doc->inheader.cupsBytesPerLine) !=
 	      doc->inheader.cupsBytesPerLine)
 	  {
-	    if (log) log(ld,FILTER_LOGLEVEL_DEBUG,
-			 "pwgtoraster: Unable to read line %d for page %d.",
+	    if (log) log(ld,CF_LOGLEVEL_DEBUG,
+			 "cfFilterPWGToRaster: Unable to read line %d for page %d.",
 			 yin + 1, pageNo);
 	    ret = false;
 	    goto out;
@@ -1608,7 +1618,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
 	  yin ++;
 	}
 
-  // Convert the page from PWG Raster to CUPS Raster
+  // Convert the page from PWG/Apple Raster to CUPS/PWG/Apple Raster
+
   // We will be able to stream per-line if the color order in the destination
   // raster stream is chunked or banded and stream per-page if the colors are
   // arranged in planes
@@ -1635,8 +1646,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
 					 doc->inheader.cupsBytesPerLine) !=
 		    doc->inheader.cupsBytesPerLine)
 		{
-		  if (log) log(ld,FILTER_LOGLEVEL_DEBUG,
-			       "pwgtoraster: Unable to read line %d for page %d.",
+		  if (log) log(ld,CF_LOGLEVEL_DEBUG,
+			       "cfFilterPWGToRaster: Unable to read line %d for page %d.",
 			       yin + 1, pageNo);
 		  ret = false;
 		  goto out;
@@ -1920,14 +1931,14 @@ static bool outPage(pwgtoraster_doc_t *doc,
 	{
 	  preBuf1 = (unsigned char *)calloc(doc->outheader.cupsWidth,
 					    sizeof(unsigned char));
-	  cupsImageRGBToWhite(bp, preBuf1, doc->outheader.cupsWidth);
+	  cfImageRGBToWhite(bp, preBuf1, doc->outheader.cupsWidth);
 	  bp = preBuf1;
 	}
 	else if (input_color_mode == 0) // 1-bit mono
 	{
 	  preBuf1 = (unsigned char *)calloc(doc->outheader.cupsWidth,
 					    sizeof(unsigned char));
-	  oneBitToGrayLine(bp, preBuf1, doc->outheader.cupsWidth);
+	  cfOneBitToGrayLine(bp, preBuf1, doc->outheader.cupsWidth);
 	  bp = preBuf1;
 	}
 	// We are always on color mode 1 (8-bit gray) at this point
@@ -1935,14 +1946,14 @@ static bool outPage(pwgtoraster_doc_t *doc,
 	{
 	  preBuf2 = (unsigned char *)calloc(doc->outheader.cupsWidth * 3,
 					    sizeof(unsigned char));
-	  cupsImageWhiteToRGB(bp, preBuf2, doc->outheader.cupsWidth);
+	  cfImageWhiteToRGB(bp, preBuf2, doc->outheader.cupsWidth);
 	  bp = preBuf2;
 	}
 	else if (color_mode_needed == 0) // 1-bit mono
 	{
 	  preBuf2 = (unsigned char *)calloc((doc->outheader.cupsWidth + 7) / 8,
 					    sizeof(unsigned char));
-	  oneBitLine(bp, preBuf2, doc->outheader.cupsWidth,
+	  cfOneBitLine(bp, preBuf2, doc->outheader.cupsWidth,
 		     y - doc->bitmapoffset[1], doc->bi_level);
 	  bp = preBuf2;
 	}
@@ -1971,8 +1982,8 @@ static bool outPage(pwgtoraster_doc_t *doc,
 			     doc->inheader.cupsBytesPerLine) !=
 	doc->inheader.cupsBytesPerLine)
     {
-      if (log) log(ld,FILTER_LOGLEVEL_DEBUG,
-		   "pwgtoraster: Unable to read line %d for page %d.",
+      if (log) log(ld,CF_LOGLEVEL_DEBUG,
+		   "cfFilterPWGToRaster: Unable to read line %d for page %d.",
 		   yin + 1, pageNo);
       ret = false;
       goto out;
@@ -1991,7 +2002,7 @@ static bool outPage(pwgtoraster_doc_t *doc,
   return (ret);
 }
 
-static int setColorProfile(pwgtoraster_doc_t *doc, filter_logfunc_t log, void *ld)
+static int set_color_profile(pwgtoraster_doc_t *doc, cf_logfunc_t log, void *ld)
 {
   if (doc->outheader.cupsBitsPerColor != 8 && doc->outheader.cupsBitsPerColor != 16) {
     /* color Profile is not supported */
@@ -2070,35 +2081,53 @@ static int setColorProfile(pwgtoraster_doc_t *doc, filter_logfunc_t log, void *l
     doc->color_profile.outputColorProfile = NULL;
     break;
   default:
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "pwgtoraster: Specified ColorSpace is not supported");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterPWGToRaster: Specified ColorSpace is not supported");
     return (1);
   }
 
   return (0);
 }
 
-int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
+int cfFilterPWGToRaster(int inputfd,        /* I - File descriptor input stream */
                 int outputfd,       /* I - File descriptor output stream */
                 int inputseekable,  /* I - Is input stream seekable? (unused) */
-                filter_data_t *data,/* I - Job and printer data */
-                void *parameters)   /* I - Filter-specific parameters (unused)*/
+                cf_filter_data_t *data,/* I - Job and printer data */
+                void *parameters)   /* I - Filter-specific parameters */
 {
+  cf_filter_out_format_t outformat;
   pwgtoraster_doc_t doc;
   int i;
   cups_raster_t *inras = NULL,
                 *outras = NULL;
-  filter_logfunc_t     log = data->logfunc;
+  cf_logfunc_t     log = data->logfunc;
   void                 *ld = data->logdata;
   conversion_function_t convert;
-  filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
+  cf_filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
   void                    *icd = data->iscanceleddata;
   int ret = 0;
 
 
   (void)inputseekable;
 
-  cmsSetLogErrorHandler(lcmsErrorHandler);
+  if (parameters) {
+    outformat = *(cf_filter_out_format_t *)parameters;
+    if (outformat != CF_FILTER_OUT_FORMAT_CUPS_RASTER &&
+	outformat != CF_FILTER_OUT_FORMAT_PWG_RASTER &&
+	outformat != CF_FILTER_OUT_FORMAT_APPLE_RASTER &&
+	outformat != CF_FILTER_OUT_FORMAT_PCLM)
+      outformat = CF_FILTER_OUT_FORMAT_CUPS_RASTER;
+  } else
+    outformat = CF_FILTER_OUT_FORMAT_CUPS_RASTER;
+
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterPWGToRaster: Output format: %s",
+	       (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ? "CUPS Raster" :
+		(outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ? "PWG Raster" :
+		 (outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER ? "Apple Raster" :
+		  "PCLM"))));
+
+  cmsSetLogErrorHandler(lcms_error_handler);
 
  /*
   * Open the input data stream specified by inputfd ...
@@ -2108,8 +2137,8 @@ int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
   {
     if (!iscanceled || !iscanceled(icd))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pwgtoraster: Unable to open input data stream.");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPWGToRaster: Unable to open input data stream.");
     }
 
     return (1);
@@ -2124,7 +2153,7 @@ int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
   doc.color_profile.renderingIntent = INTENT_PERCEPTUAL;
 
   // Parse the options
-  if (parseOpts(data, parameters, &doc) == 1)
+  if (parse_opts(data, outformat, &doc) == 1)
     return (1);
 
   doc.outheader.NumCopies = data->copies;
@@ -2136,8 +2165,8 @@ int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
      && doc.outheader.cupsBitsPerColor != 4
      && doc.outheader.cupsBitsPerColor != 8
      && doc.outheader.cupsBitsPerColor != 16) {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pwgtoraster: Specified color format is not supported.");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPWGToRaster: Specified color format is not supported.");
     ret = 1;
     goto out;
   }
@@ -2178,8 +2207,8 @@ int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
     if (doc.outheader.cupsColorOrder != CUPS_ORDER_CHUNKED
        || (doc.outheader.cupsBitsPerColor != 8
           && doc.outheader.cupsBitsPerColor != 16)) {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pwgtoraster: Specified color format is not supported.");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPWGToRaster: Specified color format is not supported.");
       ret = 1;
       goto out;
     }
@@ -2208,15 +2237,15 @@ int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
     doc.outputNumColors = 1;
     break;
   default:
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pwgtoraster: Specified ColorSpace is not supported.");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPWGToRaster: Specified ColorSpace is not supported.");
     ret = 1;
     goto out;
   }
   if (!(doc.color_profile.cm_disabled)) {
-    if (setColorProfile(&doc, log, ld) == 1) {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "pwgtoraster: Cannot set color profile.");
+    if (set_color_profile(&doc, log, ld) == 1) {
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterPWGToRaster: Cannot set color profile.");
       ret = 1;
       goto out;
     }
@@ -2226,9 +2255,19 @@ int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
   * Open output raster stream
   */
 
-  if ((outras = cupsRasterOpen(outputfd, CUPS_RASTER_WRITE)) == 0) {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "pwgtoraster: Can't open output raster stream.");
+  if ((outras = cupsRasterOpen(outputfd, (outformat ==
+					  CF_FILTER_OUT_FORMAT_CUPS_RASTER ?
+					  CUPS_RASTER_WRITE :
+					  (outformat ==
+					   CF_FILTER_OUT_FORMAT_PWG_RASTER ?
+					   CUPS_RASTER_WRITE_PWG :
+					   (outformat ==
+					    CF_FILTER_OUT_FORMAT_APPLE_RASTER ?
+					    CUPS_RASTER_WRITE_APPLE :
+					    CUPS_RASTER_WRITE))))) == 0)
+  {
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterPWGToRaster: Can't open output raster stream.");
     ret = 1;
     goto out;
   }
@@ -2238,65 +2277,70 @@ int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
   */
 
   memset(&convert, 0, sizeof(conversion_function_t));
-  if (selectConvertFunc(outras, &doc, &convert, log, ld) == 1)
+  if (select_convert_func(outras, &doc, &convert, log, ld) == 1)
   {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "pwgtoraster: Unable to select color conversion function.");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterPWGToRaster: Unable to select color conversion function.");
     ret = 1;
     goto out;
   }
 
   if (log) {
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster: Output page header");
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   Duplex = %d", doc.outheader.Duplex);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   HWResolution = [ %d %d ]",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster: Output page header");
+    if (doc.outheader.ImagingBoundingBox[3] > 0)
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   Duplex = %d", doc.outheader.Duplex);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   HWResolution = [ %d %d ]",
 	doc.outheader.HWResolution[0], doc.outheader.HWResolution[1]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   ImagingBoundingBox = [ %d %d %d %d ]",
-	doc.outheader.ImagingBoundingBox[0],
-	doc.outheader.ImagingBoundingBox[1],
-	doc.outheader.ImagingBoundingBox[2],
-	doc.outheader.ImagingBoundingBox[3]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   Margins = [ %d %d ]",
-	doc.outheader.Margins[0], doc.outheader.Margins[1]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   ManualFeed = %d", doc.outheader.ManualFeed);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   MediaPosition = %d", doc.outheader.MediaPosition);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   NumCopies = %d", doc.outheader.NumCopies);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   Orientation = %d", doc.outheader.Orientation);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   PageSize = [ %d %d ]",
+    if (doc.outheader.ImagingBoundingBox[3] > 0)
+    {
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   ImagingBoundingBox = [ %d %d %d %d ]",
+	  doc.outheader.ImagingBoundingBox[0],
+	  doc.outheader.ImagingBoundingBox[1],
+	  doc.outheader.ImagingBoundingBox[2],
+	  doc.outheader.ImagingBoundingBox[3]);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   Margins = [ %d %d ]",
+	  doc.outheader.Margins[0], doc.outheader.Margins[1]);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   ManualFeed = %d", doc.outheader.ManualFeed);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   MediaPosition = %d", doc.outheader.MediaPosition);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   NumCopies = %d", doc.outheader.NumCopies);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   Orientation = %d", doc.outheader.Orientation);
+    }
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   PageSize = [ %d %d ]",
 	doc.outheader.PageSize[0], doc.outheader.PageSize[1]);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsWidth = %d", doc.outheader.cupsWidth);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsHeight = %d", doc.outheader.cupsHeight);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsMediaType = %d", doc.outheader.cupsMediaType);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBitsPerColor = %d",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsWidth = %d", doc.outheader.cupsWidth);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsHeight = %d", doc.outheader.cupsHeight);
+    if (doc.outheader.ImagingBoundingBox[3] > 0)
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterPWGToRaster:   cupsMediaType = %d", doc.outheader.cupsMediaType);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBitsPerColor = %d",
 	doc.outheader.cupsBitsPerColor);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBitsPerPixel = %d",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBitsPerPixel = %d",
 	doc.outheader.cupsBitsPerPixel);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsBytesPerLine = %d",
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsBytesPerLine = %d",
 	doc.outheader.cupsBytesPerLine);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsColorOrder = %d", doc.outheader.cupsColorOrder);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsColorSpace = %d", doc.outheader.cupsColorSpace);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsCompression = %d", doc.outheader.cupsCompression);
-    log(ld, FILTER_LOGLEVEL_DEBUG,
-	"pwgtoraster:   cupsPageSizeName = %s", doc.outheader.cupsPageSizeName);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsColorOrder = %d", doc.outheader.cupsColorOrder);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsColorSpace = %d", doc.outheader.cupsColorSpace);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsCompression = %d", doc.outheader.cupsCompression);
+    log(ld, CF_LOGLEVEL_DEBUG,
+	"cfFilterPWGToRaster:   cupsPageSizeName = %s", doc.outheader.cupsPageSizeName);
   }
 
  /*
@@ -2304,12 +2348,12 @@ int pwgtoraster(int inputfd,        /* I - File descriptor input stream */
   */
 
   i = 0;
-  while (outPage(&doc, i + 1, inras, outras, &convert, log, ld, iscanceled,
+  while (out_page(&doc, i + 1, inras, outras, &convert, log, ld, iscanceled,
 		 icd))
     i ++;
   if (i == 0)
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "pwgtoraster: No page printed, outputting empty file.");
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterPWGToRaster: No page printed, outputting empty file.");
 
  out:
 

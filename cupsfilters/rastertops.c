@@ -18,14 +18,14 @@
 /*
  * Types...
  */
-typedef struct {                /**** Document information ****/
+typedef struct rastertops_doc_s {         /**** Document information ****/
   cups_file_t	*inputfp;		  /* Temporary file, if any */
   FILE		*outputfp;		  /* Temporary file, if any */
-  filter_logfunc_t logfunc;               /* Logging function, NULL for no
+  cf_logfunc_t logfunc;               /* Logging function, NULL for no
 					     logging */
   void          *logdata;                 /* User data for logging function, can
 					     be NULL */
-  filter_iscanceledfunc_t iscanceledfunc; /* Function returning 1 when
+  cf_filter_iscanceledfunc_t iscanceledfunc; /* Function returning 1 when
 					     job is canceled, NULL for not
 					     supporting stop on cancel */
   void *iscanceleddata;                   /* User data for is-canceled
@@ -37,8 +37,8 @@ typedef struct {                /**** Document information ****/
  * 'write_prolog()' - Writing the PostScript prolog for the file
  */
 
-void
-writeProlog(int 	   width,  /* I - width of the image in points */
+static void
+write_prolog(int 	   width,  /* I - width of the image in points */
             int 	   height, /* I - height of the image in points */
             rastertops_doc_t *doc) /* I - Document information */
 {
@@ -55,16 +55,16 @@ writeProlog(int 	   width,  /* I - width of the image in points */
 }
 
 /*
- *	'writeStartPage()' - Write the basic page setup
+ * 'write_start_page()' - Write the basic page setup
  */
 
-void
-writeStartPage(int  page,   /* I - Page to write */
+static void
+write_start_page(int  page,   /* I - Page to write */
 	       int  width,  /* I - Page width in points */
                int  length, /* I - Page length in points */
                rastertops_doc_t *doc) /* I - Document information */
 {
-  if (doc->logfunc) doc->logfunc(doc->logdata, FILTER_LOGLEVEL_CONTROL,
+  if (doc->logfunc) doc->logfunc(doc->logdata, CF_LOGLEVEL_CONTROL,
 				 "PAGE: %d %d", page, 1);
   fprintf(doc->outputfp, "%%%%Page: %d %d\n", page, page);
   fprintf(doc->outputfp, "%%%%BeginPageSetup\n");
@@ -77,7 +77,7 @@ writeStartPage(int  page,   /* I - Page to write */
  * 'find_bits()' - Finding the number of bits per color
  */
 
-int                           /* O - Exit status */
+static int                    /* O - Exit status */
 find_bits(cups_cspace_t mode, /* I - Color space of data */
 	  int           bpc)  /* I - Original bits per color of data */
 {
@@ -95,11 +95,11 @@ find_bits(cups_cspace_t mode, /* I - Color space of data */
 }
 
 /*
- * 'writeImage()' - Write the information regarding the image
+ * 'write_image()' - Write the information regarding the image
  */
 
-void			             /* O - Exit status */
-writeImage(int           pagewidth,  /* I - width of page in points */
+static void
+write_image(int           pagewidth,  /* I - width of page in points */
 	   int           pageheight, /* I - height of page in points */
 	   int           bpc,	     /* I - bits per color */
 	   int           pixwidth,   /* I - width of image in pixels */
@@ -179,7 +179,7 @@ writeImage(int           pagewidth,  /* I - width of page in points */
  * 'convert_pixels()'- Convert 1 bpc to 8 bpc
  */
 
-void
+static void
 convert_pixels(unsigned char *pixdata,      /* I - Original pixel data */
 	       unsigned char *convertedpix, /* I - Buffer for converted data */
 	       int 	     width)	    /* I - Width of data */
@@ -206,10 +206,10 @@ convert_pixels(unsigned char *pixdata,      /* I - Original pixel data */
 }
 
 /*
- *	'write_flate()' - Write the image data in flate encoded format
+ * 'write_flate()' - Write the image data in flate encoded format
  */
 
-int                                     /* O - Error value */
+static int                              /* O - Error value */
 write_flate(cups_raster_t *ras,	        /* I - Image data */
 	    cups_page_header2_t	header,	/* I - Bytes Per Line */
       rastertops_doc_t *doc) /* I - Document information */
@@ -309,42 +309,42 @@ write_flate(cups_raster_t *ras,	        /* I - Image data */
 }
 
 /*
- *  Report a zlib or i/o error
+ * 'z_error()' - Report a zlib or i/o error
  */
 
-void
-zerr(int ret, /* I - Return status of deflate */
+static void
+z_error(int ret, /* I - Return status of deflate */
     rastertops_doc_t *doc) /* I - Document information */
 {
   switch (ret) {
   case Z_ERRNO:
-    if (doc->logfunc) doc->logfunc(doc->logdata, FILTER_LOGLEVEL_ERROR,
-		  "rastertops: zpipe - error in source data or output file");
+    if (doc->logfunc) doc->logfunc(doc->logdata, CF_LOGLEVEL_ERROR,
+		  "cfFilterRasterToPS: zpipe - error in source data or output file");
     break;
   case Z_STREAM_ERROR:
-    if (doc->logfunc) doc->logfunc(doc->logdata, FILTER_LOGLEVEL_ERROR,
-		  "rastertops: zpipe - invalid compression level");
+    if (doc->logfunc) doc->logfunc(doc->logdata, CF_LOGLEVEL_ERROR,
+		  "cfFilterRasterToPS: zpipe - invalid compression level");
     break;
   case Z_DATA_ERROR:
-    if (doc->logfunc) doc->logfunc(doc->logdata, FILTER_LOGLEVEL_ERROR,
-		  "rastertops: zpipe - invalid or incomplete deflate data");
+    if (doc->logfunc) doc->logfunc(doc->logdata, CF_LOGLEVEL_ERROR,
+		  "cfFilterRasterToPS: zpipe - invalid or incomplete deflate data");
     break;
   case Z_MEM_ERROR:
-    if (doc->logfunc) doc->logfunc(doc->logdata, FILTER_LOGLEVEL_ERROR,
-		  "rastertops: zpipe - out of memory");
+    if (doc->logfunc) doc->logfunc(doc->logdata, CF_LOGLEVEL_ERROR,
+		  "cfFilterRasterToPS: zpipe - out of memory");
     break;
   case Z_VERSION_ERROR:
-    if (doc->logfunc) doc->logfunc(doc->logdata, FILTER_LOGLEVEL_ERROR,
-		  "rastertops: zpipe - zlib version mismatch!");
+    if (doc->logfunc) doc->logfunc(doc->logdata, CF_LOGLEVEL_ERROR,
+		  "cfFilterRasterToPS: zpipe - zlib version mismatch!");
   }
 }
 
 /*
- * 'writeEndPage()' - Show the current page.
+ * 'write_end_page()' - Show the current page.
  */
 
-void
-writeEndPage(rastertops_doc_t *doc) /* I - Document information */
+static void
+write_end_page(rastertops_doc_t *doc) /* I - Document information */
 {
   fprintf(doc->outputfp, "\ngrestore\n");
   fprintf(doc->outputfp, "showpage\n");
@@ -352,11 +352,11 @@ writeEndPage(rastertops_doc_t *doc) /* I - Document information */
 }
 
 /*
- * 'writeTrailer()' - Write the PostScript trailer.
+ * 'write_trailer()' - Write the PostScript trailer.
  */
 
-void
-writeTrailer(int  pages, /* I - Number of pages */
+static void
+write_trailer(int  pages, /* I - Number of pages */
             rastertops_doc_t *doc) /* I - Document information */
 {
   fprintf(doc->outputfp, "%%%%Trailer\n");
@@ -365,15 +365,15 @@ writeTrailer(int  pages, /* I - Number of pages */
 }
 
 /*
- * 'rastertops()' - Filter function to convert PWG raster input
+ * 'cfFilterRasterToPS()' - Filter function to convert PWG raster input
  *                  to PostScript
  */
 
 int                         /* O - Error status */
-rastertops(int inputfd,         /* I - File descriptor input stream */
+cfFilterRasterToPS(int inputfd,         /* I - File descriptor input stream */
        int outputfd,        /* I - File descriptor output stream */
        int inputseekable,   /* I - Is input stream seekable? (unused) */
-       filter_data_t *data, /* I - Job and printer data */
+       cf_filter_data_t *data, /* I - Job and printer data */
        void *parameters)    /* I - Filter-specific parameters (unused) */
 {
   rastertops_doc_t     doc;         /* Document information */
@@ -384,9 +384,9 @@ rastertops(int inputfd,         /* I - File descriptor input stream */
   int           empty,         /* Is the input empty? */
                 Page = 0,      /* variable for counting the pages */
                 ret;           /* Return value of deflate compression */
-  filter_logfunc_t     log = data->logfunc;
+  cf_logfunc_t     log = data->logfunc;
   void                 *ld = data->logdata;
-  filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
+  cf_filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
   void                 *icd = data->iscanceleddata;
 
 
@@ -401,8 +401,8 @@ rastertops(int inputfd,         /* I - File descriptor input stream */
   {
     if (!iscanceled || !iscanceled(icd))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "rastertops: Unable to open input data stream.");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterRasterToPS: Unable to open input data stream.");
     }
 
     return (1);
@@ -416,8 +416,8 @@ rastertops(int inputfd,         /* I - File descriptor input stream */
   {
     if (!iscanceled || !iscanceled(icd))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "rastertops: Unable to open output data stream.");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterRasterToPS: Unable to open output data stream.");
     }
 
     cupsFileClose(inputfp);
@@ -446,8 +446,8 @@ rastertops(int inputfd,         /* I - File descriptor input stream */
   {
     if (iscanceled && iscanceled(icd))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-                  "rastertops: Job canceled");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+                  "cfFilterRasterToPS: Job canceled");
       break;
     }
 
@@ -458,7 +458,7 @@ rastertops(int inputfd,         /* I - File descriptor input stream */
     if (empty)
     {
       empty = 0;
-      writeProlog(header.PageSize[0], header.PageSize[1], &doc);
+      write_prolog(header.PageSize[0], header.PageSize[1], &doc);
     }
 
    /*
@@ -467,18 +467,18 @@ rastertops(int inputfd,         /* I - File descriptor input stream */
 
     Page ++;
 
-    if (log) log(ld, FILTER_LOGLEVEL_INFO,
-     "rastertops: Starting page %d.", Page);
+    if (log) log(ld, CF_LOGLEVEL_INFO,
+     "cfFilterRasterToPS: Starting page %d.", Page);
 
    /*
     *	Write the starting of the page
     */
-    writeStartPage(Page, header.PageSize[0], header.PageSize[1], &doc);
+    write_start_page(Page, header.PageSize[0], header.PageSize[1], &doc);
 
    /*
     *	write the information regarding the image
     */
-    writeImage(header.PageSize[0], header.PageSize[1],
+    write_image(header.PageSize[0], header.PageSize[1],
 	       header.cupsBitsPerColor,
 	       header.cupsWidth, header.cupsHeight,
 	       header.cupsColorSpace, &doc);
@@ -486,19 +486,19 @@ rastertops(int inputfd,         /* I - File descriptor input stream */
     /* Write the compressed image data*/
     ret = write_flate(ras, header, &doc);
     if (ret != Z_OK)
-      zerr(ret, &doc);
-    writeEndPage(&doc);
+      z_error(ret, &doc);
+    write_end_page(&doc);
   }
 
   if (empty)
   {
-     if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-      "rastertops: Input is empty, outputting empty file.");
+     if (log) log(ld, CF_LOGLEVEL_DEBUG,
+      "cfFilterRasterToPS: Input is empty, outputting empty file.");
      cupsRasterClose(ras);
      return 0;
   }
 
-  writeTrailer(Page, &doc);
+  write_trailer(Page, &doc);
 
   cupsRasterClose(ras);
 

@@ -42,9 +42,9 @@ extern "C" {
  * Types and structures...
  */
 
-typedef int (*filter_iscanceledfunc_t)(void *data);
+typedef int (*cf_filter_iscanceledfunc_t)(void *data);
 
-typedef struct filter_data_s {
+typedef struct cf_filter_data_s {
   char *printer;             /* Print queue name or NULL */
   int job_id;                /* Job ID or 0 */
   char *job_user;            /* Job user or NULL */
@@ -60,31 +60,32 @@ typedef struct filter_data_s {
   ppd_file_t *ppd;           /* PPD file data */
   int back_pipe[2];          /* File descriptors of backchannel pipe */
   int side_pipe[2];          /* File descriptors of sidechannel pipe */
-  filter_logfunc_t logfunc;  /* Logging function, NULL for no logging */
+  cf_logfunc_t logfunc;  /* Logging function, NULL for no logging */
   void *logdata;             /* User data for logging function, can be NULL */
-  filter_iscanceledfunc_t iscanceledfunc; /* Function returning 1 when
-					     job is canceled, NULL for not
-					     supporting stop on cancel */
+  cf_filter_iscanceledfunc_t iscanceledfunc; /* Function returning 1 when
+						job is canceled, NULL for not
+						supporting stop on cancel */
   void *iscanceleddata;      /* User data for is-canceled function, can be
 				NULL */
-} filter_data_t;
+} cf_filter_data_t;
 
-typedef int (*filter_function_t)(int inputfd, int outputfd, int inputseekable,
-				 filter_data_t *data, void *parameters);
+typedef int (*cf_filter_function_t)(int inputfd, int outputfd,
+				    int inputseekable, cf_filter_data_t *data,
+				    void *parameters);
 
-typedef enum filter_out_format_e { /* Possible output formats for rastertopdf()
-				      filter function */
-  OUTPUT_FORMAT_PDF,	     /* PDF */
-  OUTPUT_FORMAT_PDF_IMAGE,   /* Raster-only PDF */
-  OUTPUT_FORMAT_PCLM,	     /* PCLM */
-  OUTPUT_FORMAT_CUPS_RASTER, /* CUPS Raster */
-  OUTPUT_FORMAT_PWG_RASTER,  /* PWG Raster */
-  OUTPUT_FORMAT_APPLE_RASTER,/* Apple Raster */
-  OUTPUT_FORMAT_PXL          /* PCL-XL */
-} filter_out_format_t;
+typedef enum cf_filter_out_format_e { /* Possible output formats for filter
+					 functions */
+  CF_FILTER_OUT_FORMAT_PDF,	      /* PDF */
+  CF_FILTER_OUT_FORMAT_PDF_IMAGE,     /* Raster-only PDF */
+  CF_FILTER_OUT_FORMAT_PCLM,	      /* PCLM */
+  CF_FILTER_OUT_FORMAT_CUPS_RASTER,   /* CUPS Raster */
+  CF_FILTER_OUT_FORMAT_PWG_RASTER,    /* PWG Raster */
+  CF_FILTER_OUT_FORMAT_APPLE_RASTER,  /* Apple Raster */
+  CF_FILTER_OUT_FORMAT_PXL            /* PCL-XL */
+} cf_filter_out_format_t;
 
-typedef struct filter_external_cups_s { /* Parameters for the
-					   filterExternalCUPS() filter
+typedef struct cf_filter_external_cups_s { /* Parameters for the
+					   cfFilterExternalCUPS() filter
 					   function */
   const char *filter;        /* Path/Name of the CUPS filter to be called by
 				this filter function, required */
@@ -101,127 +102,141 @@ typedef struct filter_external_cups_s { /* Parameters for the
   char **envp;               /* Additional environment variables, the already
                                 defined ones stay valid but can be overwritten
                                 by these ones, NULL if none */
-} filter_external_cups_t;
+} cf_filter_external_cups_t;
 
-typedef struct filter_filter_in_chain_s { /* filter entry for CUPS array to
-					     be supplied to filterChain()
-					     filter function */
-  filter_function_t function; /* Filter function to be called */
-  void *parameters;           /* Parameters for this filter function call */
-  char *name;                 /* Name/comment, only for logging */
-} filter_filter_in_chain_t;
+typedef struct cf_filter_filter_in_chain_s { /* filter entry for CUPS array to
+						be supplied to cfFilterChain()
+						filter function */
+  cf_filter_function_t function; /* Filter function to be called */
+  void *parameters;              /* Parameters for this filter function call */
+  char *name;                    /* Name/comment, only for logging */
+} cf_filter_filter_in_chain_t;
 
-typedef struct texttopdf_parameter_s {  /* parameters container of environemnt
-					   variables needed by texttopdf
-					   filter function */
-  const char *data_dir;
-  const char *char_set;
-  const char *content_type;
-  const char *classification;
-} texttopdf_parameter_t;
+typedef struct cf_filter_texttopdf_parameter_s { /* parameters container of
+						    environemnt variables needed
+						    by texttopdf filter
+						    function */
+  char *data_dir;
+  char *char_set;
+  char *content_type;
+  char *classification;
+} cf_filter_texttopdf_parameter_t;
 
-typedef struct filter_input_output_format_s { /* Contains input and output type
-					     to be supplied to the universal function */
+typedef struct cf_filter_universal_parameter_s { /* Contains input and output
+						    type to be supplied to the
+						    universal function, and also
+						    parameters for
+						    cfFilterTextToPDF() */
   char *input_format;                 
   char *output_format;
-} filter_input_output_format_t;
+  cf_filter_texttopdf_parameter_t texttopdf_params;
+} cf_filter_universal_parameter_t;
+
 
 /*
  * Prototypes...
  */
 
-extern void cups_logfunc(void *data,
-			 filter_loglevel_t level,
-			 const char *message,
-			 ...);
+extern void cfCUPSLogFunc(void *data,
+			  cf_loglevel_t level,
+			  const char *message,
+			  ...);
 
 
-extern int cups_iscanceledfunc(void *data);
+extern int cfCUPSIsCanceledFunc(void *data);
 
 
-extern int filterCUPSWrapper(int argc,
-			     char *argv[],
-			     filter_function_t filter,
-			     void *parameters,
-			     int *JobCanceled);
+extern int cfFilterCUPSWrapper(int argc,
+			       char *argv[],
+			       cf_filter_function_t filter,
+			       void *parameters,
+			       int *JobCanceled);
 
 
-extern int filterTee(int inputfd,
-		     int outputfd,
-		     int inputseekable,
-		     filter_data_t *data,
-		     void *parameters);
+extern int cfFilterLoadPPD(cf_filter_data_t *data);
+
+
+extern void cfFilterFreePPD(cf_filter_data_t *data);
+
+
+extern int cfFilterTee(int inputfd,
+		       int outputfd,
+		       int inputseekable,
+		       cf_filter_data_t *data,
+		       void *parameters);
 
 /* Parameters: Filename/path (const char *) to copy the data to */
 
 
-extern int filterPOpen(filter_function_t filter_func, /* I - Filter function */
-		       int inputfd,
-		       int outputfd,
-		       int inputseekable,
-		       filter_data_t *data,
-		       void *parameters,
-		       int *filter_pid);
+extern int cfFilterPOpen(cf_filter_function_t filter_func, /* I - Filter
+							          function */
+			 int inputfd,
+			 int outputfd,
+			 int inputseekable,
+			 cf_filter_data_t *data,
+			 void *parameters,
+			 int *filter_pid);
 
 
-extern int filterPClose(int fd,
-			int filter_pid,
-			filter_data_t *data);
+extern int cfFilterPClose(int fd,
+			  int filter_pid,
+			  cf_filter_data_t *data);
 
 
-extern int filterChain(int inputfd,
-		       int outputfd,
-		       int inputseekable,
-		       filter_data_t *data,
-		       void *parameters);
+extern int cfFilterChain(int inputfd,
+			 int outputfd,
+			 int inputseekable,
+			 cf_filter_data_t *data,
+			 void *parameters);
 
-/* Parameters: Unsorted (!) CUPS array of filter_filter_in_chain_t*
+/* Parameters: Unsorted (!) CUPS array of cf_filter_filter_in_chain_t*
    List of filters to execute in a chain, next filter takes output of
    previous filter as input, all get the same filter data, parameters
    from the array */
 
 
-extern int filterExternalCUPS(int inputfd,
-			      int outputfd,
-			      int inputseekable,
-			      filter_data_t *data,
-			      void *parameters);
+extern int cfFilterExternalCUPS(int inputfd,
+				int outputfd,
+				int inputseekable,
+				cf_filter_data_t *data,
+				void *parameters);
 
-/* Parameters: filter_external_cups_t*
+/* Parameters: cf_filter_external_cups_t*
    Path/Name of the CUPS filter to be called by this filter function,
    extra options for the 5th command line argument, and extra environment
    variables */
 
 
-extern int filterOpenBackAndSidePipes(filter_data_t *data);
+extern int cfFilterOpenBackAndSidePipes(cf_filter_data_t *data);
 
 
-extern void filterCloseBackAndSidePipes(filter_data_t *data);
+extern void cfFilterCloseBackAndSidePipes(cf_filter_data_t *data);
 
 
-extern int ghostscript(int inputfd,
-		       int outputfd,
-		       int inputseekable,
-		       filter_data_t *data,
-		       void *parameters);
+extern int cfFilterGhostscript(int inputfd,
+			       int outputfd,
+			       int inputseekable,
+			       cf_filter_data_t *data,
+			       void *parameters);
 
-/* Parameters: filter_out_format_t*
+/* Parameters: cf_filter_out_format_t*
    Ouput format: PDF, raster-only PDF, PCLm, PostScript, CUPS Raster,
    PWG Raster, Apple Raster, PCL-XL
-   Note: On the Apple Raster selection the output is actually CUPS Raster
-   but information about available color spaces and depths is taken from
-   the urf-supported printer IPP attribute or appropriate PPD file
-   attribute. This mode is for further processing with rastertopwg. This can
-   change in the future when we add Apple Raster output support to
-   Ghostscript's "cups" output
-   device.*/
+   Note: With the CF_FILTER_OUT_FORMAT_APPLE_RASTER selection and a
+   Ghostscript version without "appleraster" output device (9.55.x and
+   older) the output is actually CUPS Raster but information about
+   available color spaces and depths is taken from the urf-supported
+   printer IPP attribute or appropriate PPD file attribute. This mode
+   is for further processing with rastertopwg. With Ghostscript
+   supporting Apple Raster output (9.56.0 and newer), we actually
+   produce Apple Raster and no further filter is required. */
 
 
-extern int bannertopdf(int inputfd,
-		      int outputfd,
-		      int inputseekable,
-		      filter_data_t *data,
-		      void *parameters);
+extern int cfFilterBannerToPDF(int inputfd,
+			       int outputfd,
+			       int inputseekable,
+			       cf_filter_data_t *data,
+			       void *parameters);
 
 /* Parameters: const char*
    Template directory: In this directory there are the PDF template files
@@ -231,27 +246,27 @@ extern int bannertopdf(int inputfd,
    as template. */
 
 
-extern int imagetopdf(int inputfd,
-		      int outputfd,
-		      int inputseekable,
-		      filter_data_t *data,
-		      void *parameters);
+extern int cfFilterImageToPDF(int inputfd,
+			      int outputfd,
+			      int inputseekable,
+			      cf_filter_data_t *data,
+			      void *parameters);
 
 
-extern int imagetops(int inputfd,
-		     int outputfd,
-		     int inputseekable,
-		     filter_data_t *data,
-		     void *parameters);
+extern int cfFilterImageToPS(int inputfd,
+			     int outputfd,
+			     int inputseekable,
+			     cf_filter_data_t *data,
+			     void *parameters);
 
 
-extern int imagetoraster(int inputfd,
-			 int outputfd,
-			 int inputseekable,
-			 filter_data_t *data,
-			 void *parameters);
+extern int cfFilterImageToRaster(int inputfd,
+				 int outputfd,
+				 int inputseekable,
+				 cf_filter_data_t *data,
+				 void *parameters);
 
-/* Parameters: filter_out_format_t* Ouput format: CUPS Raster, PWG
+/* Parameters: cf_filter_out_format_t* Ouput format: CUPS Raster, PWG
    Raster, Apple Raster, PCLM
    Note: On the Apple Raster, PWG Raster, and PCLm selection the
    output is actually CUPS Raster but information about available
@@ -263,146 +278,165 @@ extern int imagetoraster(int inputfd,
    this filter function. */
 
 
-extern int mupdftoraster(int inputfd,
-			 int outputfd,
-			 int inputseekable,
-			 filter_data_t *data,
-			 void *parameters);
+extern int cfFilterMuPDFToPWG(int inputfd,
+			      int outputfd,
+			      int inputseekable,
+			      cf_filter_data_t *data,
+			      void *parameters);
 
-extern int pclmtoraster(int inputfd,
-			int outputfd,
-			int inputseekable,
-			filter_data_t *data,
-			void *parameters);
+/* Parameters: cf_filter_out_format_t*
+   Ouput format: CUPS Raster, PWG Raster, Apple Raster, PCLm
+   Note: With CUPS Raster, Apple Raster, or PCLm selections the output
+   is actually PWG Raster but information about available color spaces
+   and depths is taken from the pseudo-PostScript in the PPDs options,
+   urf-supported printer IPP attribute or the appropriate PPD file
+   attribute (PCLM is always sRGB 8-bit). These modes are for further
+   processing with pwgtoraster or rastertopclm. This can change in the
+   future when MuPDF adds further output formats. */
 
 
-extern int pdftopdf(int inputfd,
-		    int outputfd,
-		    int inputseekable,
-		    filter_data_t *data,
-		    void *parameters);
+extern int cfFilterPCLmToRaster(int inputfd,
+				int outputfd,
+				int inputseekable,
+				cf_filter_data_t *data,
+				void *parameters);
+
+/* Parameters: cf_filter_out_format_t*
+   Ouput format: CUPS Raster, Apple Raster, or PWG Raster */
+
+
+extern int cfFilterPDFToPDF(int inputfd,
+			    int outputfd,
+			    int inputseekable,
+			    cf_filter_data_t *data,
+			    void *parameters);
 
 /* Parameters: const char*
    For CUPS value of FINAL_CONTENT_TYPE environment variable, generally
    MIME type of the final output format of the filter chain for this job
-   (not the output of the pdftopdf() filter function) */
+   (not the output of the cfFilterPDFToPDF() filter function) */
 
 
-extern int pdftops(int inputfd,
-		   int outputfd,
-		   int inputseekable,
-		   filter_data_t *data,
-		   void *parameters);
+extern int cfFilterPDFToPS(int inputfd,
+			   int outputfd,
+			   int inputseekable,
+			   cf_filter_data_t *data,
+			   void *parameters);
 
 
-extern int pdftoraster(int inputfd,
-		       int outputfd,
-		       int inputseekable,
-		       filter_data_t *data,
-		       void* parameters);
+extern int cfFilterPDFToRaster(int inputfd,
+			       int outputfd,
+			       int inputseekable,
+			       cf_filter_data_t *data,
+			       void* parameters);
 
-/* Parameters: filter_out_format_t*
+/* Parameters: cf_filter_out_format_t*
    Ouput format: CUPS Raster, PWG Raster, Apple Raster, PCLm
-   Note: With Apple Raster or PCLm selections the output is actually
-   CUPS Raster but information about available color spaces and depths
-   is taken from the urf-supported printer IPP attribute or the
-   appropriate PPD file attribute (PCLM is always sRGB 8-bit). These
-   modes are for further processing with rastertopwg or
-   rastertopclm. This can change in the future when we add Apple
-   Raster output support to this filter. */
+   Note: With PCLm selection the output is actually CUPS Raster but
+   color space and depth will be 8-bit sRGB or SGray, the only color
+   spaces supported by PCLm. This mode is for further processing with
+   rastertopclm. */
 
 
-extern int pstops(int inputfd,
-		  int outputfd,
-		  int inputseekable,
-		  filter_data_t *data,
-		  void *parameters);
+extern int cfFilterPSToPS(int inputfd,
+			  int outputfd,
+			  int inputseekable,
+			  cf_filter_data_t *data,
+			  void *parameters);
 
 
-extern int pwgtoraster(int inputfd,
-		       int outputfd,
-		       int inputseekable,
-		       filter_data_t *data,
-		       void *parameters);
+extern int cfFilterPWGToRaster(int inputfd,
+			       int outputfd,
+			       int inputseekable,
+			       cf_filter_data_t *data,
+			       void *parameters);
+
+/* Parameters: cf_filter_out_format_t*
+   Ouput format: CUPS Raster, PWG Raster, Apple Raster, PCLm
+   Note: On the PCLM selection the output is actually CUPS Raster
+   but information about available color spaces and depths is taken from
+   the pclm-... printer IPP attributes or appropriate PPD file
+   attribute. This mode is for further processing with rastertopclm. */
 
 
-extern int rastertopdf(int inputfd,
-		       int outputfd,
-		       int inputseekable,
-		       filter_data_t *data,
-		       void *parameters);
+extern int cfFilterRasterToPDF(int inputfd,
+			       int outputfd,
+			       int inputseekable,
+			       cf_filter_data_t *data,
+			       void *parameters);
 
-/* Parameters: filter_out_format_t*
+/* Parameters: cf_filter_out_format_t*
    Ouput format: PDF, PCLm */
 
 
-extern int rastertops(int inputfd,
-		      int outputfd,
-		      int inputseekable,
-		      filter_data_t *data,
-		      void *parameters);
+extern int cfFilterRasterToPS(int inputfd,
+			      int outputfd,
+			      int inputseekable,
+			      cf_filter_data_t *data,
+			      void *parameters);
 
 
-extern int rastertopwg(int inputfd,
-		       int outputfd,
-		       int inputseekable,
-		       filter_data_t *data,
-		       void *parameters);
+extern int cfFilterRasterToPWG(int inputfd,
+			       int outputfd,
+			       int inputseekable,
+			       cf_filter_data_t *data,
+			       void *parameters);
 
-/* Parameters: filter_out_format_t*
+/* Parameters: cf_filter_out_format_t*
    Ouput format: Apple Raster or PWG Raster */
 
 
-extern int texttopdf(int inputfd,
-		     int outputfd,
-		     int inputseekable,
-		     filter_data_t *data,
-		     void *parameters);
+extern int cfFilterTextToPDF(int inputfd,
+			     int outputfd,
+			     int inputseekable,
+			     cf_filter_data_t *data,
+			     void *parameters);
 
-/* Parameters: texttopdf_parameter_t*
+/* Parameters: cf_filter_texttopdf_parameter_t*
    Data directory (fonts, charsets), charset, content type (for prettyprint),
    classification (for overprint/watermark) */
 
 
-extern int texttotext(int inputfd,
-		      int outputfd,
-		      int inputseekable,
-		      filter_data_t *data,
-		      void *parameters);
+extern int cfFilterTextToText(int inputfd,
+			      int outputfd,
+			      int inputseekable,
+			      cf_filter_data_t *data,
+			      void *parameters);
 
-extern int universal(int inputfd,
-		     int outputfd,
-		     int inputseekable,
-		     filter_data_t *data,
-		     void *parameters);
+extern int cfFilterUniversal(int inputfd,
+			     int outputfd,
+			     int inputseekable,
+			     cf_filter_data_t *data,
+			     void *parameters);
 
-/* Parameters: filter_input_output_format_t
-   Contains : Input_type : CONTENT_TYPE environment variable
-              Output type : FINAL_CONTENT TYPE environment variable */
-
-
-extern void filterSetCommonOptions(ppd_file_t *ppd,
-				   int num_options,
-				   cups_option_t *options,
-				   int change_size,
-				   int *Orientation,
-				   int *Duplex,
-				   int *LanguageLevel,
-				   int *ColorDevice,
-				   float *PageLeft,
-				   float *PageRight,
-				   float *PageTop,
-				   float *PageBottom,
-				   float *PageWidth,
-				   float *PageLength,
-				   filter_logfunc_t log,
-				   void *ld);
+/* Parameters: cf_filter_universal_parameter_t
+   Contains : Input_type: CONTENT_TYPE environment variable of CUPS
+              Output type: FINAL_CONTENT TYPE environment variable of CUPS
+              texttopdf_params: parameters for texttopdf */
 
 
-extern void filterUpdatePageVars(int Orientation,
-				 float *PageLeft, float *PageRight,
-				 float *PageTop, float *PageBottom,
-				 float *PageWidth, float *PageLength);
+extern void cfFilterSetCommonOptions(ppd_file_t *ppd,
+				     int num_options,
+				     cups_option_t *options,
+				     int change_size,
+				     int *Orientation,
+				     int *Duplex,
+				     int *LanguageLevel,
+				     int *ColorDevice,
+				     float *PageLeft,
+				     float *PageRight,
+				     float *PageTop,
+				     float *PageBottom,
+				     float *PageWidth,
+				     float *PageLength,
+				     cf_logfunc_t log,
+				     void *ld);
+
+
+extern void cfFilterUpdatePageVars(int Orientation,
+				   float *PageLeft, float *PageRight,
+				   float *PageTop, float *PageBottom,
+				   float *PageWidth, float *PageLength);
 
 
 #  ifdef __cplusplus

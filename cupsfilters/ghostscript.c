@@ -32,12 +32,12 @@
 
 #define PDF_MAX_CHECK_COMMENT_LINES	20
 
-typedef enum {
+typedef enum gs_doc_e {
   GS_DOC_TYPE_PDF,
   GS_DOC_TYPE_PS,
   GS_DOC_TYPE_EMPTY,
   GS_DOC_TYPE_UNKNOWN
-} GsDocType;
+} gs_doc_t;
 
 #ifdef CUPS_RASTER_SYNCv1
 typedef cups_page_header2_t gs_page_header;
@@ -45,12 +45,12 @@ typedef cups_page_header2_t gs_page_header;
 typedef cups_page_header_t gs_page_header;
 #endif /* CUPS_RASTER_SYNCv1 */
 
-static GsDocType
+static gs_doc_t
 parse_doc_type(FILE *fp)
 {
   char buf[5];
   int is_empty = 1;
-  GsDocType type = GS_DOC_TYPE_UNKNOWN;
+  gs_doc_t type = GS_DOC_TYPE_UNKNOWN;
 
   /* get the first few bytes of the file */
   rewind(fp);
@@ -101,16 +101,17 @@ parse_pdf_header_options(FILE *fp, gs_page_header *h)
 
 static void
 add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
-		       filter_out_format_t outformat, int pxlcolor)
+		       cf_filter_out_format_t outformat, int pxlcolor)
 {
   int i;
   char tmpstr[1024];
 
   /* Simple boolean, enumerated choice, numerical, and string parameters */
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER) {
-    if (h->MediaClass[0] |= '\0') {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER) {
+    if (outformat != CF_FILTER_OUT_FORMAT_APPLE_RASTER &&
+	(h->MediaClass[0] |= '\0')) {
       snprintf(tmpstr, sizeof(tmpstr), "-sMediaClass=%s", h->MediaClass);
       cupsArrayAdd(gs_args, strdup(tmpstr));
     }
@@ -145,10 +146,10 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
       cupsArrayAdd(gs_args, strdup(tmpstr));
     }
   }
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER ||
-      outformat == OUTPUT_FORMAT_PXL) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PXL) {
     /* PDF output is only for turning PostScript input data into PDF
        not for sending PDF to a PDF printer (this is done by pdftopdf)
        therefore we do not apply duplex/tumble here. */
@@ -156,7 +157,7 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
       cupsArrayAdd(gs_args, strdup("-dDuplex"));
     }
   }
-  if (outformat != OUTPUT_FORMAT_PCLM) {
+  if (outformat != CF_FILTER_OUT_FORMAT_PCLM) {
     /* In PCLM we have our own method to generate the needed
        resolution, to respect the printer's supported resolutions for
        PCLm, so this is only for non-PCLm output formats */
@@ -164,9 +165,9 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
 	     h->HWResolution[0], h->HWResolution[1]);
     cupsArrayAdd(gs_args, strdup(tmpstr));
   }
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER) {
     if (h->InsertSheet) {
       cupsArrayAdd(gs_args, strdup("-dInsertSheet"));
     }
@@ -184,13 +185,13 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
       cupsArrayAdd(gs_args, strdup("-dManualFeed"));
     }
   }
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER ||
-      outformat == OUTPUT_FORMAT_PXL) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PXL) {
     if (h->MediaPosition) {
       int mediapos;
-      if (outformat == OUTPUT_FORMAT_PXL) {
+      if (outformat == CF_FILTER_OUT_FORMAT_PXL) {
 	/* Convert PWG MediaPosition values to PXL-ones */
 	if (h->MediaPosition == 1) /* Main */
 	  mediapos = 4;
@@ -227,9 +228,9 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
       cupsArrayAdd(gs_args, strdup(tmpstr));
     }
   }
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER) {
     if (h->MediaWeight) {
       snprintf(tmpstr, sizeof(tmpstr), "-dMediaWeight=%d",
 	       (unsigned)(h->MediaWeight));
@@ -259,9 +260,9 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
   cupsArrayAdd(gs_args, strdup(tmpstr));
   snprintf(tmpstr, sizeof(tmpstr), "-dDEVICEHEIGHTPOINTS=%d",h->PageSize[1]);
   cupsArrayAdd(gs_args, strdup(tmpstr));
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER) {
     if (h->Separations) {
       cupsArrayAdd(gs_args, strdup("-dSeparations"));
     }
@@ -269,10 +270,10 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
       cupsArrayAdd(gs_args, strdup("-dTraySwitch"));
     }
   }
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER ||
-      outformat == OUTPUT_FORMAT_PXL) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PXL) {
     /* PDF output is only for turning PostScript input data into PDF
        not for sending PDF to a PDF printer (this is done by pdftopdf)
        therefore we do not apply duplex/tumble here. */
@@ -280,9 +281,9 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
       cupsArrayAdd(gs_args, strdup("-dTumble"));
     }
   }
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER) {
     if (h->cupsMediaType) {
       snprintf(tmpstr, sizeof(tmpstr), "-dcupsMediaType=%d",
 	       (unsigned)(h->cupsMediaType));
@@ -297,7 +298,7 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
     cupsArrayAdd(gs_args, strdup(tmpstr));
   }
   
-  if (outformat == OUTPUT_FORMAT_PXL) {
+  if (outformat == CF_FILTER_OUT_FORMAT_PXL) {
     if (h->cupsColorSpace == CUPS_CSPACE_W ||
 	h->cupsColorSpace == CUPS_CSPACE_K ||
 	h->cupsColorSpace == CUPS_CSPACE_WHITE ||
@@ -313,9 +314,9 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
     else
       cupsArrayAdd(gs_args, strdup("-sDEVICE=pxlmono"));
   }
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER) {
     if (h->cupsCompression) {
       snprintf(tmpstr, sizeof(tmpstr), "-dcupsCompression=%d",
 	       (unsigned)(h->cupsCompression));
@@ -338,9 +339,9 @@ add_pdf_header_options(gs_page_header *h, cups_array_t *gs_args,
     }
   }
 #ifdef CUPS_RASTER_SYNCv1
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER) {
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER) {
     if (h->cupsBorderlessScalingFactor != 1.0f) {
       snprintf(tmpstr, sizeof(tmpstr), "-dcupsBorderlessScalingFactor=%.4f",
 	       h->cupsBorderlessScalingFactor);
@@ -389,9 +390,9 @@ gs_spawn (const char *filename,
           char **envp,
           FILE *fp,
 	  int outputfd,
-	  filter_logfunc_t log,
+	  cf_logfunc_t log,
 	  void *ld,
-	  filter_iscanceledfunc_t iscanceled,
+	  cf_filter_iscanceledfunc_t iscanceled,
 	  void *icd)
 {
   char *argument;
@@ -404,7 +405,7 @@ gs_spawn (const char *filename,
   int numargs;
   int pid, gspid, errpid;
   cups_file_t *logfp;
-  filter_loglevel_t log_level;
+  cf_loglevel_t log_level;
   char *msg;
   int status = 65536;
   int wstatus;
@@ -421,7 +422,8 @@ gs_spawn (const char *filename,
 
   if (log) {
     /* Debug output: Full Ghostscript command line and environment variables */
-    snprintf(buf, sizeof(buf), "ghostscript: Ghostscript command line:");
+    snprintf(buf, sizeof(buf),
+	     "cfFilterGhostscript: Ghostscript command line:");
     for (i = 0; gsargv[i]; i ++) {
       if ((strchr(gsargv[i],' ')) || (strchr(gsargv[i],'\t')))
 	apos = "'";
@@ -430,11 +432,11 @@ gs_spawn (const char *filename,
       snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
 	       " %s%s%s", apos, gsargv[i], apos);
     }
-    log(ld, FILTER_LOGLEVEL_DEBUG, "%s", buf);
+    log(ld, CF_LOGLEVEL_DEBUG, "%s", buf);
 
     for (i = 0; envp[i]; i ++)
-      log(ld, FILTER_LOGLEVEL_DEBUG,
-	  "ghostscript: envp[%d]=\"%s\"", i, envp[i]);
+      log(ld, CF_LOGLEVEL_DEBUG,
+	  "cfFilterGhostscript: envp[%d]=\"%s\"", i, envp[i]);
   }
 
   /* Create a pipe for feeding the job into Ghostscript */
@@ -442,9 +444,8 @@ gs_spawn (const char *filename,
   {
     infds[0] = -1;
     infds[1] = -1;
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "ghostscript: Unable to establish stdin pipe for Ghostscript "
-		 "call");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterGhostscript: Unable to establish stdin pipe for Ghostscript call");
     goto out;
   }
 
@@ -453,9 +454,8 @@ gs_spawn (const char *filename,
   {
     errfds[0] = -1;
     errfds[1] = -1;
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "ghostscript: Unable to establish stderr pipe for Ghostscript "
-		 "call");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterGhostscript: Unable to establish stderr pipe for Ghostscript call");
     goto out;
   }
 
@@ -466,18 +466,16 @@ gs_spawn (const char *filename,
     close(infds[1]);
     infds[0] = -1;
     infds[1] = -1;
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "ghostscript: Unable to set \"close on exec\" flag on read "
-		 "end of the stdin pipe for Ghostscript call");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterGhostscript: Unable to set \"close on exec\" flag on read end of the stdin pipe for Ghostscript call");
     goto out;
   }
   if (fcntl(infds[1], F_SETFD, fcntl(infds[1], F_GETFD) | FD_CLOEXEC))
   {
     close(infds[0]);
     close(infds[1]);
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "ghostscript: Unable to set \"close on exec\" flag on write "
-		 "end of the stdin pipe for Ghostscript call");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterGhostscript: Unable to set \"close on exec\" flag on write end of the stdin pipe for Ghostscript call");
     goto out;
   }
   if (fcntl(errfds[0], F_SETFD, fcntl(errfds[0], F_GETFD) | FD_CLOEXEC))
@@ -486,18 +484,16 @@ gs_spawn (const char *filename,
     close(errfds[1]);
     errfds[0] = -1;
     errfds[1] = -1;
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "ghostscript: Unable to set \"close on exec\" flag on read "
-		 "end of the stderr pipe for Ghostscript call");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterGhostscript: Unable to set \"close on exec\" flag on read end of the stderr pipe for Ghostscript call");
     goto out;
   }
   if (fcntl(errfds[1], F_SETFD, fcntl(errfds[1], F_GETFD) | FD_CLOEXEC))
   {
     close(errfds[0]);
     close(errfds[1]);
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "ghostscript: Unable to set \"close on exec\" flag on write "
-		 "end of the stderr pipe for Ghostscript call");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterGhostscript: Unable to set \"close on exec\" flag on write end of the stderr pipe for Ghostscript call");
     goto out;
   }
 
@@ -507,18 +503,16 @@ gs_spawn (const char *filename,
     if (infds[0] >= 0) {
       if (infds[0] != 0) {
 	if (dup2(infds[0], 0) < 0) {
-	  if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		       "ghostscript: Unable to couple pipe with stdin of "
-		       "Ghostscript process");
+	  if (log) log(ld, CF_LOGLEVEL_ERROR,
+		       "cfFilterGhostscript: Unable to couple pipe with stdin of Ghostscript process");
 	  exit(1);
 	}
 	close(infds[0]);
       }
       close(infds[1]);
     } else {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "ghostscript: invalid pipe file descriptor to couple with "
-		   "stdin of Ghostscript process");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterGhostscript: invalid pipe file descriptor to couple with stdin of Ghostscript process");
       exit(1);
     }
 
@@ -526,18 +520,16 @@ gs_spawn (const char *filename,
     if (errfds[1] >= 2) {
       if (errfds[1] != 2) {
 	if (dup2(errfds[1], 2) < 0) {
-	  if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		       "ghostscript: Unable to couple pipe with stderr of "
-		       "Ghostscript process");
+	  if (log) log(ld, CF_LOGLEVEL_ERROR,
+		       "cfFilterGhostscript: Unable to couple pipe with stderr of Ghostscript process");
 	  exit(1);
 	}
 	close(errfds[1]);
       }
       close(errfds[0]);
     } else {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "ghostscript: invalid pipe file descriptor to couple with "
-		   "stderr of Ghostscript process");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterGhostscript: invalid pipe file descriptor to couple with stderr of Ghostscript process");
       exit(1);
     }
 
@@ -545,29 +537,27 @@ gs_spawn (const char *filename,
     if (outputfd >= 1) {
       if (outputfd != 1) {
 	if (dup2(outputfd, 1) < 0) {
-	  if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		       "ghostscript: Unable to couple stdout of Ghostscript "
-		       "process");
+	  if (log) log(ld, CF_LOGLEVEL_ERROR,
+		       "cfFilterGhostscript: Unable to couple stdout of Ghostscript process");
 	  exit(1);
 	}
 	close(outputfd);
       }
     } else {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "ghostscript: Invalid file descriptor to couple with "
-		   "stdout of Ghostscript process");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterGhostscript: Invalid file descriptor to couple with stdout of Ghostscript process");
       exit(1);
     }
 
     /* Execute Ghostscript command line ... */
     execvpe(filename, gsargv, envp);
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "ghostscript: Unable to launch Ghostscript: %s: %s", filename,
-		 strerror(errno));
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterGhostscript: Unable to launch Ghostscript: %s: %s",
+		 filename, strerror(errno));
     exit(1);
   }
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "ghostscript: Started Ghostscript (PID %d)", gspid);
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterGhostscript: Started Ghostscript (PID %d)", gspid);
 
   close(infds[0]);
   close(errfds[1]);
@@ -579,25 +569,25 @@ gs_spawn (const char *filename,
     while (cupsFileGets(logfp, buf, sizeof(buf)))
       if (log) {
 	if (strncmp(buf, "DEBUG: ", 7) == 0) {
-	  log_level = FILTER_LOGLEVEL_DEBUG;
+	  log_level = CF_LOGLEVEL_DEBUG;
 	  msg = buf + 7;
 	} else if (strncmp(buf, "DEBUG2: ", 8) == 0) {
-	  log_level = FILTER_LOGLEVEL_DEBUG;
+	  log_level = CF_LOGLEVEL_DEBUG;
 	  msg = buf + 8;
 	} else if (strncmp(buf, "INFO: ", 6) == 0) {
-	  log_level = FILTER_LOGLEVEL_INFO;
+	  log_level = CF_LOGLEVEL_INFO;
 	  msg = buf + 6;
 	} else if (strncmp(buf, "WARNING: ", 9) == 0) {
-	  log_level = FILTER_LOGLEVEL_WARN;
+	  log_level = CF_LOGLEVEL_WARN;
 	  msg = buf + 9;
 	} else if (strncmp(buf, "ERROR: ", 7) == 0) {
-	  log_level = FILTER_LOGLEVEL_ERROR;
+	  log_level = CF_LOGLEVEL_ERROR;
 	  msg = buf + 7;
 	} else {
-	  log_level = FILTER_LOGLEVEL_DEBUG;
+	  log_level = CF_LOGLEVEL_DEBUG;
 	  msg = buf;
 	}
-	log(ld, log_level, "ghostscript: %s", msg);
+	log(ld, log_level, "cfFilterGhostscript: %s", msg);
       }
     cupsFileClose(logfp);
     /* No need to close the fd errfds[0], as cupsFileClose(fp) does this
@@ -605,8 +595,8 @@ gs_spawn (const char *filename,
     /* Ignore errors of the logging process */
     exit(0);
   }
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "ghostscript: Started logging (PID %d)", errpid);
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterGhostscript: Started logging (PID %d)", errpid);
 
   close(errfds[0]);
 
@@ -620,23 +610,23 @@ gs_spawn (const char *filename,
       if (count == -1) {
         if (errno == EINTR)
           goto retry_write;
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		     "ghostscript: write failed: %s", strerror(errno));
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
+		     "cfFilterGhostscript: write failed: %s", strerror(errno));
       }
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "ghostscript: Can't feed job data into Ghostscript");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterGhostscript: Can't feed job data into Ghostscript");
       goto out;
     }
   }
   close (infds[1]);
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "ghostscript: Input data feed completed");
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterGhostscript: Input data feed completed");
 
   while (gspid > 0 || errpid > 0) {
     if ((pid = wait(&wstatus)) < 0) {
       if (errno == EINTR && iscanceled && iscanceled(icd)) {
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "ghostscript: Job canceled, killing Ghostscript ...");
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterGhostscript: Job canceled, killing Ghostscript ...");
 	kill(gspid, SIGTERM);
 	gspid = -1;
 	kill(errpid, SIGTERM);
@@ -650,22 +640,22 @@ gs_spawn (const char *filename,
     if (wstatus) {
       if (WIFEXITED(wstatus)) {
 	/* Via exit() anywhere or return() in the main() function */
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		     "ghostscript: %s (PID %d) stopped with status %d",
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
+		     "cfFilterGhostscript: %s (PID %d) stopped with status %d",
 		     (pid == gspid ? "Ghostscript" : "Logging"), pid,
 		     WEXITSTATUS(wstatus));
 	status = WEXITSTATUS(wstatus);
       } else {
 	/* Via signal */
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		     "ghostscript: %s (PID %d) crashed on signal %d",
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
+		     "cfFilterGhostscript: %s (PID %d) crashed on signal %d",
 		     (pid == gspid ? "Ghostscript" : "Logging"), pid,
 		     WTERMSIG(wstatus));
 	status = 256 * WTERMSIG(wstatus);
       }
     } else {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "ghostscript: %s (PID %d) exited with no errors.",
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterGhostscript: %s (PID %d) exited with no errors.",
 		   (pid == gspid ? "Ghostscript" : "Logging"), pid);
       status = 0;
     }
@@ -680,103 +670,21 @@ out:
   return status;
 }
 
-#if 0
-static char *
-get_ppd_icc_fallback (ppd_file_t *ppd,
-		      char **qualifier,
-		      filter_logfunc_t log,
-		      void *ld)
-{
-  char full_path[1024];
-  char *icc_profile = NULL;
-  char qualifer_tmp[1024];
-  const char *profile_key;
-  ppd_attr_t *attr;
-  char *datadir;
-
-  /* get profile attr, falling back to CUPS */
-  profile_key = "APTiogaProfile";
-  attr = ppdFindAttr(ppd, profile_key, NULL);
-  if (attr == NULL) {
-    profile_key = "cupsICCProfile";
-    attr = ppdFindAttr(ppd, profile_key, NULL);
-  }
-
-  /* create a string for a quick comparion */
-  snprintf(qualifer_tmp, sizeof(qualifer_tmp),
-           "%s.%s.%s",
-           qualifier[0],
-           qualifier[1],
-           qualifier[2]);
-
-  /* neither */
-  if (attr == NULL) {
-    if (log) log(ld, FILTER_LOGLEVEL_INFO,
-		 "ghostscript: no profiles specified in PPD");
-    goto out;
-  }
-
-  if ((datadir = getenv("CUPS_DATADIR")) == NULL)
-    datadir = CUPS_DATADIR;
-
-  /* try to find a profile that matches the qualifier exactly */
-  for (;attr != NULL; attr = ppdFindNextAttr(ppd, profile_key, NULL)) {
-    if (log) log(ld, FILTER_LOGLEVEL_INFO,
-		 "ghostscript: found profile %s in PPD with qualifier '%s'",
-		 attr->value, attr->spec);
-
-    /* invalid entry */
-    if (attr->spec == NULL || attr->value == NULL)
-      continue;
-
-    /* expand to a full path if not already specified */
-    if (attr->value[0] != '/')
-      snprintf(full_path, sizeof(full_path),
-               "%s/profiles/%s", datadir, attr->value);
-    else
-      strncpy(full_path, attr->value, sizeof(full_path));
-
-    /* check the file exists */
-    if (access(full_path, 0)) {
-      if (log) log(ld, FILTER_LOGLEVEL_INFO,
-		   "ghostscript: found profile %s in PPD that does not exist",
-		   full_path);
-      continue;
-    }
-
-    /* matches the qualifier */
-    if (strcmp(qualifer_tmp, attr->spec) == 0) {
-      icc_profile = strdup(full_path);
-      goto out;
-    }
-  }
-
-  /* no match */
-  if (attr == NULL) {
-    if (log) log(ld, FILTER_LOGLEVEL_INFO,
-		 "ghostscript: no profiles in PPD for qualifier '%s'",
-		 qualifer_tmp);
-    goto out;
-  }
-
-out:
-  return icc_profile;
-}
-#endif /* 0 */
-
 /*
- * 'ghostscript()' - Filter function to use Ghostscript for print
- *                   data conversions
+ * 'cfFilterGhostscript()' - Filter function to use Ghostscript for print
+ *                           data conversions
  */
 
-int                              /* O - Error status */
-ghostscript(int inputfd,         /* I - File descriptor input stream */
-	    int outputfd,        /* I - File descriptor output stream */
-	    int inputseekable,   /* I - Is input stream seekable? */
-	    filter_data_t *data, /* I - Job and printer data */
-	    void *parameters)    /* I - Filter-specific parameters */
+int                                         /* O - Error status */
+cfFilterGhostscript(int inputfd,            /* I - File descriptor input
+					           stream */
+		    int outputfd,           /* I - File descriptor output
+					           stream */
+		    int inputseekable,      /* I - Is input stream seekable? */
+		    cf_filter_data_t *data, /* I - Job and printer data */
+		    void *parameters)       /* I - Filter-specific parameters */
 {
-  filter_out_format_t outformat;
+  cf_filter_out_format_t outformat;
   char buf[BUFSIZ];
   char *filename;
   char *icc_profile = NULL;
@@ -789,7 +697,7 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
   cups_array_t *gs_args = NULL;
   cups_option_t *options = NULL;
   FILE *fp = NULL;
-  GsDocType doc_type;
+  gs_doc_t doc_type;
   gs_page_header h;
   cups_cspace_t cspace = -1;
   int bytes;
@@ -802,45 +710,49 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
   ipp_t *printer_attrs = data->printer_attrs;
   ipp_t *job_attrs = data->job_attrs;
   struct sigaction sa;
-  cm_calibration_t cm_calibrate;
+  cf_cm_calibration_t cm_calibrate;
   int pxlcolor = 0; /* 1 if printer is color printer otherwise 0. */
   ppd_attr_t *attr;
   ipp_attribute_t *ipp_attr;
-  filter_logfunc_t log = data->logfunc;
+  cf_logfunc_t log = data->logfunc;
   void          *ld = data->logdata;
-  filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
+  cf_filter_iscanceledfunc_t iscanceled = data->iscanceledfunc;
   void          *icd = data->iscanceleddata;
 
 
-  /* Note: With the OUTPUT_FORMAT_APPLE_RASTER selection the output is
-     actually CUPS Raster but information about available color spaces
-     and depths is taken from the urf-supported printer IPP attribute
-     or appropriate PPD file attribute. This mode is for further
-     processing with rastertopwg. This can change in the future when
-     we add Apple Raster output support to Ghostscript's "cups" output
-     device. */
+  /* Note: With the CF_FILTER_OUT_FORMAT_APPLE_RASTER selection and a
+     Ghostscript version without "appleraster" output device (9.55.x
+     and older) the output is actually CUPS Raster but information
+     about available color spaces and depths is taken from the
+     urf-supported printer IPP attribute or appropriate PPD file
+     attribute. This mode is for further processing with
+     rastertopwg. With Ghostscript supporting Apple Raster output
+     (9.56.0 and newer), we actually produce Apple Raster and no
+     further filter is required. */
 
   if (parameters) {
-    outformat = *(filter_out_format_t *)parameters;
-    if (outformat != OUTPUT_FORMAT_PDF &&
-	outformat != OUTPUT_FORMAT_PDF_IMAGE &&
-	outformat != OUTPUT_FORMAT_PCLM &&
-	outformat != OUTPUT_FORMAT_CUPS_RASTER &&
-	outformat != OUTPUT_FORMAT_PWG_RASTER &&
-	outformat != OUTPUT_FORMAT_APPLE_RASTER &&
-	outformat != OUTPUT_FORMAT_PXL)
-      outformat = OUTPUT_FORMAT_PWG_RASTER;
+    outformat = *(cf_filter_out_format_t *)parameters;
+    if (outformat != CF_FILTER_OUT_FORMAT_PDF &&
+	outformat != CF_FILTER_OUT_FORMAT_PDF_IMAGE &&
+	outformat != CF_FILTER_OUT_FORMAT_PCLM &&
+	outformat != CF_FILTER_OUT_FORMAT_CUPS_RASTER &&
+	outformat != CF_FILTER_OUT_FORMAT_PWG_RASTER &&
+	outformat != CF_FILTER_OUT_FORMAT_APPLE_RASTER &&
+	outformat != CF_FILTER_OUT_FORMAT_PXL)
+      outformat = CF_FILTER_OUT_FORMAT_CUPS_RASTER;
   } else
-    outformat = OUTPUT_FORMAT_PWG_RASTER;
+    outformat = CF_FILTER_OUT_FORMAT_CUPS_RASTER;
 
-  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-	       "ghostscript: Output format: %s",
-	       (outformat == OUTPUT_FORMAT_CUPS_RASTER ? "CUPS Raster" :
-		(outformat == OUTPUT_FORMAT_PWG_RASTER ? "PWG Raster" :
-		 (outformat == OUTPUT_FORMAT_APPLE_RASTER ? "Apple Raster" :
-		  (outformat == OUTPUT_FORMAT_PDF ? "PDF" :
-		   (outformat == OUTPUT_FORMAT_PDF_IMAGE ? "raster-only PDF" :
-		    (outformat == OUTPUT_FORMAT_PCLM ? "PCLm" :
+  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+	       "cfFilterGhostscript: Output format: %s",
+	       (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ? "CUPS Raster" :
+		(outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ? "PWG Raster" :
+		 (outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER ?
+		  "Apple Raster" :
+		  (outformat == CF_FILTER_OUT_FORMAT_PDF ? "PDF" :
+		   (outformat == CF_FILTER_OUT_FORMAT_PDF_IMAGE ?
+		    "raster-only PDF" :
+		    (outformat == CF_FILTER_OUT_FORMAT_PCLM ? "PCLm" :
 		     "PCL XL")))))));
   
   memset(&sa, 0, sizeof(sa));
@@ -892,8 +804,8 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
   {
     if (!iscanceled || !iscanceled(icd))
     {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "ghostscript: Unable to open input data stream.");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterGhostscript: Unable to open input data stream.");
     }
 
     return (1);
@@ -925,14 +837,14 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
     if (!inputseekable || doc_type == GS_DOC_TYPE_PS) {
       if ((fd = cupsTempFd(tempfile, sizeof(tempfile))) < 0)
       {
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		     "ghostscript: Unable to copy PDF file: %s", strerror(errno));
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
+		     "cfFilterGhostscript: Unable to copy PDF file: %s", strerror(errno));
 	fclose(fp);
 	return (1);
       }
 
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "ghostscript: Copying input to temp file \"%s\"",
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterGhostscript: Copying input to temp file \"%s\"",
 		   tempfile);
 
       while ((bytes = fread(buf, 1, sizeof(buf), fp)) > 0)
@@ -951,8 +863,8 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
       {
 	if (!iscanceled || !iscanceled(icd))
         {
-	  if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		       "ghostscript: Unable to open temporary file.");
+	  if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		       "cfFilterGhostscript: Unable to open temporary file.");
 	}
 
 	goto out;
@@ -964,36 +876,36 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
       doc_type = parse_doc_type(fp);
 
     if (doc_type == GS_DOC_TYPE_EMPTY) {
-      if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		   "ghostscript: Input is empty, outputting empty file.");
+      if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		   "cfFilterGhostscript: Input is empty, outputting empty file.");
       status = 0;
-      if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-	  outformat == OUTPUT_FORMAT_PWG_RASTER ||
-	  outformat == OUTPUT_FORMAT_APPLE_RASTER)
+      if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+	  outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+	  outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER)
 	if (write(outputfd, "RaS2", 4)) {};
       goto out;
     } if (doc_type == GS_DOC_TYPE_UNKNOWN) {
-      if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		   "ghostscript: Can't detect file type");
+      if (log) log(ld, CF_LOGLEVEL_ERROR,
+		   "cfFilterGhostscript: Can't detect file type");
       goto out;
     }
 
     if (doc_type == GS_DOC_TYPE_PDF) {
-      int pages = pdf_pages_fp(fp);
+      int pages = cfPDFPagesFP(fp);
 
       if (pages == 0) {
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "ghostscript: No pages left, outputting empty file.");
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterGhostscript: No pages left, outputting empty file.");
 	status = 0;
-	if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-	    outformat == OUTPUT_FORMAT_PWG_RASTER ||
-	    outformat == OUTPUT_FORMAT_APPLE_RASTER)
+	if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+	    outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+	    outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER)
 	  if (write(outputfd, "RaS2", 4)) {};
 	goto out;
       }
       if (pages < 0) {
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		     "ghostscript: Unexpected page count");
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
+		     "cfFilterGhostscript: Unexpected page count");
 	goto out;
       }
     } else {
@@ -1009,8 +921,8 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
     
       FILE *pd = popen(gscommand, "r");
       if (!pd) {
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		     "ghostscript: Failed to execute ghostscript to determine "
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
+		     "cfFilterGhostscript: Failed to execute ghostscript to determine "
 		     "number of input pages!");
 	goto out;
       }
@@ -1022,18 +934,18 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
 	pagecount = -1;
 
       if (pagecount == 0) {
-	if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		     "ghostscript: No pages left, outputting empty file.");
+	if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		     "cfFilterGhostscript: No pages left, outputting empty file.");
 	status = 0;
-	if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-	    outformat == OUTPUT_FORMAT_PWG_RASTER ||
-	    outformat == OUTPUT_FORMAT_APPLE_RASTER)
+	if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+	    outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+	    outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER)
 	  if (write(outputfd, "RaS2", 4)) {};
 	goto out;
       }
       if (pagecount < 0) {
-	if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		     "ghostscript: Unexpected page count");
+	if (log) log(ld, CF_LOGLEVEL_ERROR,
+		     "cfFilterGhostscript: Unexpected page count");
 	goto out;
       }
     }
@@ -1044,8 +956,8 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
       filename = NULL;
     }
 
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "ghostscript: Input format: %s",
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterGhostscript: Input format: %s",
 		 (doc_type == GS_DOC_TYPE_PDF ? "PDF" :
 		  (doc_type == GS_DOC_TYPE_PS ? "PostScript" :
 		   (doc_type == GS_DOC_TYPE_EMPTY ? "Empty file" :
@@ -1054,34 +966,33 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
   else
   {
     doc_type = GS_DOC_TYPE_UNKNOWN;
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "ghostscript: Input format: Not determined");
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "ghostscript: Streaming mode, no checks for input format, zero-page input, instructions from previous filter");
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterGhostscript: Input format: Not determined");
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterGhostscript: Streaming mode, no checks for input format, zero-page input, instructions from previous filter");
   }
 
   /* Find print-rendering-intent */
-  getPrintRenderIntent(data, &h);
-  if(log) log(ld, FILTER_LOGLEVEL_DEBUG,
+  cfGetPrintRenderIntent(data, &h);
+  if(log) log(ld, CF_LOGLEVEL_DEBUG,
 	      "Print rendering intent = %s", h.cupsRenderingIntent);
 
   /*  Check status of color management in CUPS */
-  cm_calibrate = cmGetCupsColorCalibrateMode(data, options, num_options);
+  cm_calibrate = cfCmGetCupsColorCalibrateMode(data, options, num_options);
 
-  if (cm_calibrate == CM_CALIBRATION_ENABLED)
+  if (cm_calibrate == CF_CM_CALIBRATION_ENABLED)
     cm_disabled = 1;
   else 
-    cm_disabled = cmIsPrinterCmDisabled(data, data->printer);
+    cm_disabled = cfCmIsPrinterCmDisabled(data);
 
   if (!cm_disabled)
-    cmGetPrinterIccProfile(data, data->printer, &icc_profile, ppd);
+    cfCmGetPrinterIccProfile(data, &icc_profile, ppd);
 
   /* Ghostscript parameters */
   gs_args = cupsArrayNew(NULL, NULL);
   if (!gs_args) {
-    if (log) log(ld, FILTER_LOGLEVEL_ERROR,
-		 "ghostscript: Unable to allocate memory for Ghostscript "
-		 "arguments array");
+    if (log) log(ld, CF_LOGLEVEL_ERROR,
+		 "cfFilterGhostscript: Unable to allocate memory for Ghostscript arguments array");
     goto out;
   }
 
@@ -1104,17 +1015,18 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
   cupsArrayAdd(gs_args, strdup("-sOutputFile=%stdout"));
 
   /* Ghostscript output device */
-  if (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-      outformat == OUTPUT_FORMAT_APPLE_RASTER)
+  if (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER)
     cupsArrayAdd(gs_args, strdup("-sDEVICE=cups"));
-  else if (outformat == OUTPUT_FORMAT_PDF)
+  else if (outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER)
+    cupsArrayAdd(gs_args, strdup("-sDEVICE=appleraster"));
+  else if (outformat == CF_FILTER_OUT_FORMAT_PDF)
     cupsArrayAdd(gs_args, strdup("-sDEVICE=pdfwrite"));
   /* In case of PCL XL, raster-obly PDF, or PCLm output we determine
      the exact output device later */
 
   /* Special Ghostscript options for PDF output */
-  if (outformat == OUTPUT_FORMAT_PDF) {
+  if (outformat == CF_FILTER_OUT_FORMAT_PDF) {
     /* If we output PDF we are running as a PostScript-to-PDF filter
        for incoming PostScript jobs. If the client embeds a command
        for multiple copies in the PostScript job instead of using the
@@ -1158,10 +1070,7 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
   }
 
   cspace = icc_profile ? CUPS_CSPACE_RGB : -1;
-  cupsRasterPrepareHeader(&h, data, outformat,
-			  (outformat != OUTPUT_FORMAT_APPLE_RASTER ?
-			   outformat : OUTPUT_FORMAT_CUPS_RASTER), 0,
-			  &cspace);
+  cfRasterPrepareHeader(&h, data, outformat, outformat, 0, &cspace);
 
   /* Special Ghostscript options for raster-only PDF output */
 
@@ -1170,8 +1079,8 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
 
   /* Note that these output formats require Ghostscript 9.55.0 or later */
 
-  if (outformat == OUTPUT_FORMAT_PDF_IMAGE ||
-      outformat == OUTPUT_FORMAT_PCLM) {
+  if (outformat == CF_FILTER_OUT_FORMAT_PDF_IMAGE ||
+      outformat == CF_FILTER_OUT_FORMAT_PCLM) {
     int res_x, res_y,
         sup_res_x, sup_res_y,
         best_res_x = 0, best_res_y = 0,
@@ -1183,7 +1092,7 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
 
     ipp_attr = NULL;
     attr = NULL;
-    if (outformat == OUTPUT_FORMAT_PCLM || /* PCLm forced */
+    if (outformat == CF_FILTER_OUT_FORMAT_PCLM || /* PCLm forced */
 	/* PCLm supported according to printer IPP attributes */
 	(printer_attrs &&
 	 (ipp_attr =
@@ -1194,7 +1103,7 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
 	 (attr =
 	  ppdFindAttr(ppd, "cupsPclmSourceResolutionSupported", 0)) != NULL)) {
 
-      outformat = OUTPUT_FORMAT_PCLM;
+      outformat = CF_FILTER_OUT_FORMAT_PCLM;
 
       /* Resolution */
 
@@ -1269,7 +1178,10 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
 
       /* Ghostscript output device */
 
-      cupsArrayAdd(gs_args, strdup("-sDEVICE=pclm"));
+      if (h.cupsColorSpace == CUPS_CSPACE_SW)
+	cupsArrayAdd(gs_args, strdup("-sDEVICE=pclm8"));
+      else
+	cupsArrayAdd(gs_args, strdup("-sDEVICE=pclm"));
 
       /* Strip/Band Height */
 
@@ -1335,18 +1247,18 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
 	    (!strcasecmp(attr->value, "true") ||
 	     !strcasecmp(attr->value, "on") ||
 	     !strcasecmp(attr->value, "yes")))
-          /* Color PCL XL printer, according to PPD */
+          /* Color printer, according to PPD */
 	  n = 1;
       } else if (printer_attrs) {
 	if (((ipp_attr =
 	      ippFindAttribute(printer_attrs,
 			       "color-supported", IPP_TAG_ZERO)) != NULL &&
 	     ippGetBoolean(ipp_attr, 0))) {
-	  /* Color PCL XL printer, according to printer attributes */
+	  /* Color printer, according to printer attributes */
 	  n = 1;
 	}
       }
-      if (n == 1)
+      if (n == 1 && h.cupsNumColors > 1)
 	cupsArrayAdd(gs_args, strdup("-sDEVICE=pdfimage24"));
       else
 	cupsArrayAdd(gs_args, strdup("-sDEVICE=pdfimage8"));
@@ -1361,7 +1273,7 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
     cupsArrayAdd(gs_args, strdup("-dDownScaleFactor=1"));
   }
 
-  if (outformat == OUTPUT_FORMAT_PXL)
+  if (outformat == CF_FILTER_OUT_FORMAT_PXL)
   {
     if (ppd)
     {
@@ -1488,9 +1400,9 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
     snprintf(tmpstr, sizeof(tmpstr), "-sOutputICCProfile=%s", icc_profile);
     cupsArrayAdd(gs_args, strdup(tmpstr));
   } else if (!cm_disabled &&
-	     (outformat == OUTPUT_FORMAT_CUPS_RASTER ||
-	      outformat == OUTPUT_FORMAT_PWG_RASTER ||
-	      outformat == OUTPUT_FORMAT_APPLE_RASTER)) {
+	     (outformat == CF_FILTER_OUT_FORMAT_CUPS_RASTER ||
+	      outformat == CF_FILTER_OUT_FORMAT_PWG_RASTER ||
+	      outformat == CF_FILTER_OUT_FORMAT_APPLE_RASTER)) {
     /* Set standard output ICC profile sGray/sRGB/AdobeRGB */
     if (h.cupsColorSpace == CUPS_CSPACE_SW)
       cupsArrayAdd(gs_args, strdup("-sOutputICCProfile=sgray.icc"));
@@ -1499,20 +1411,11 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
     else if (h.cupsColorSpace == CUPS_CSPACE_ADOBERGB)
       cupsArrayAdd(gs_args, strdup("-sOutputICCProfile=a98.icc"));
   } else if (!cm_disabled &&
-	     outformat == OUTPUT_FORMAT_PCLM) {
+	     outformat == CF_FILTER_OUT_FORMAT_PCLM) {
     /* Set standard output ICC profile sGray/sRGB */
-    /*if (h.cupsColorSpace == CUPS_CSPACE_SW)
+    if (h.cupsColorSpace == CUPS_CSPACE_SW)
       cupsArrayAdd(gs_args, strdup("-sOutputICCProfile=sgray.icc"));
-      else if (h.cupsColorSpace == CUPS_CSPACE_SRGB)*/
-    /* Note that Ghostscript can only output PCLm with its "pclm" device
-       in 8-bit sRGB, not in grayscale, so we always use the sRGB color
-       profile for now.
-       It is not possible to convert to grayscale by applying the gray
-       color profile on GhostScript's "pclm" device, see
-       https://bugs.ghostscript.com/show_bug.cgi?id=705014
-       We eill need an additional output device, like "pclm8", if we
-       want grayscale PCLM output, see
-       https://bugs.ghostscript.com/show_bug.cgi?id=705035 */
+    else if (h.cupsColorSpace == CUPS_CSPACE_SRGB)
       cupsArrayAdd(gs_args, strdup("-sOutputICCProfile=srgb.icc"));
   }
   else if (!cm_disabled)
@@ -1528,9 +1431,9 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
      filtering case which happens for converting PostScript input
      files before pdftopdf so margins will be handled later, whereas
      the other output formats for PDF-to-something filtering after
-     pdftopdf, to format the pages for the printer, so margins are
+     cfFilterPDFToPDF, to format the pages for the printer, so margins are
      important. */
-  if (h.cupsImagingBBox[3] > 0.0 && outformat != OUTPUT_FORMAT_PDF) {
+  if (h.cupsImagingBBox[3] > 0.0 && outformat != CF_FILTER_OUT_FORMAT_PDF) {
     snprintf(tmpstr, sizeof(tmpstr),
 	     "<</.HWMargins[%f %f %f %f] /Margins[0 0]>>setpagedevice",
 	     h.cupsImagingBBox[0], h.cupsImagingBBox[1],
@@ -1560,13 +1463,13 @@ ghostscript(int inputfd,         /* I - File descriptor input stream */
 	!strcasecmp(attr->value, "yes"))) ||
       (t && (!strcasecmp(t, "true") || !strcasecmp(t, "on") ||
 	     !strcasecmp(t, "yes")))) {
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "ghostscript: Ghostscript using Center-of-Pixel method to "
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterGhostscript: Ghostscript using Center-of-Pixel method to "
 		 "fill paths.");
     cupsArrayAdd(gs_args, strdup("0 0 .setfilladjust2"));
   } else
-    if (log) log(ld, FILTER_LOGLEVEL_DEBUG,
-		 "ghostscript: Ghostscript using Any-Part-of-Pixel method to "
+    if (log) log(ld, CF_LOGLEVEL_DEBUG,
+		 "cfFilterGhostscript: Ghostscript using Any-Part-of-Pixel method to "
 		 "fill paths.");
 
   /* Mark the end of PostScript commands supplied on the Ghostscript command

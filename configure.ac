@@ -5,15 +5,14 @@ AC_PREREQ([2.65])
 # ====================
 # Version informations
 # ====================
-m4_define([cups_filters_version_major],[1])
-m4_define([cups_filters_version_minor],[27])
-m4_define([cups_filters_version_micro],[5])
-m4_define([cups_filters_version],[cups_filters_version_major.cups_filters_version_minor.cups_filters_version_micro])
+AC_INIT([cups-filters], [2.0b1], [https://github.com/OpenPrinting/cups-filters/issues], [cups-filters], [https://github.com/OpenPrinting/cups-filters/])
+cups_filters_version="AC_PACKAGE_VERSION"
+cups_filters_version_major="`echo AC_PACKAGE_VERSION | awk -F. '{print $1}'`"
+cups_filters_version_major="`echo AC_PACKAGE_VERSION | awk -F. '{printf("%d\n",$2);}'`"
 
 # =============
 # Automake init
 # =============
-AC_INIT([cups-filters],[cups_filters_version])
 AC_CONFIG_MACRO_DIR([m4])
 m4_include([m4/ac_define_dir.m4])
 m4_include([m4/ax_compare_version.m4])
@@ -631,22 +630,22 @@ AS_IF([test "x$enable_ghostscript" != "xyes"], [
 		])
 	])
 	AS_IF([test "x$CUPS_GHOSTSCRIPT" = "x"], [
-		AC_MSG_ERROR([Required gs binary is missing. Please install ghostscript-gpl package.])
+		AC_MSG_ERROR([Required gs binary is missing. Please install ghostscript package.])
 	])
 	AC_DEFINE([HAVE_GHOSTSCRIPT], [], [Define that we provide ghostscript binary])
 	AS_IF([test x"$with_pdftops" = xgs], [AC_DEFINE_UNQUOTED([CUPS_PDFTOPS_RENDERER], [GS], [Define default renderer])])
 
-	AS_IF([test x"$enable_gs_ps2write" = "xyes"], [
-		AC_DEFINE([HAVE_GHOSTSCRIPT_PS2WRITE], [], [gs supports ps2write])
-	])
 	AS_IF([test "x$cross_compiling" != "xyes"], [
 		AC_MSG_CHECKING(whether gs supports the ps2write device)
 		AS_IF([`$CUPS_GHOSTSCRIPT -h 2>&1 | grep -q ps2write`], [
 			AC_MSG_RESULT([yes])
-			AC_DEFINE([HAVE_GHOSTSCRIPT_PS2WRITE], [], [gs supports ps2write])
 		], [
 			AC_MSG_RESULT([no])
+			enable_gs_ps2write=no
 		])
+	])
+	AS_IF([test x"$enable_gs_ps2write" = "xyes"], [
+		AC_DEFINE([HAVE_GHOSTSCRIPT_PS2WRITE], [], [gs supports ps2write])
 	])
 ])
 AM_CONDITIONAL(ENABLE_GHOSTSCRIPT, test "x$enable_ghostscript" = xyes)
@@ -988,6 +987,7 @@ Build configuration:
 	poppler:         ${enable_poppler}
 	ghostscript:     ${enable_ghostscript}
 	gs-path:         ${with_gs_path}
+	gs ps2write:     ${enable_gs_ps2write}
 	mutool:          ${enable_mutool}
 	mutool-path:     ${with_mutool_path}
 	ippfind-path:    ${with_ippfind_path}
