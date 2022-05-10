@@ -137,13 +137,14 @@ _cupsImageReadJPEG(
   /*
     scan image file for exif data
     */
+
   int temp = _cupsImageReadEXIF(img, fp);
 
   /* 
     check headers only if EXIF contains no info about ppi
     */
 
-  if (img->xppi == 0 && cinfo.X_density > 0 && cinfo.Y_density > 0 && cinfo.density_unit > 0)
+  if (cinfo.X_density > 0 && cinfo.Y_density > 0 && cinfo.density_unit > 0)
   {
     if (cinfo.density_unit == 1)
     {

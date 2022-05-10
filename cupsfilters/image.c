@@ -895,25 +895,25 @@ int _cupsImageReadEXIF(cups_image_t *img, FILE *fp)
     return -1;
   }
 
-
+  long int originalOffset = ftell(fp);
   fseek(fp, 0L, SEEK_END);
 
   // calculating the size of the file
   long int res = ftell(fp);
   
-
-  fseek(fp, 0L, SEEK_SET);
-  char buf[res + 1];
-
-  // char buffer[100];
   // long int res = 0;
 
+  // char buffer[100];
   // while (!feof(fp)) // to read file
   //   {
   //       // function used to read the contents of file
   //       fread(buffer, sizeof(char), 1, fp);
   //       res++;
   //   }
+  
+
+  
+  char buf[res + 1];
 
   int pos = 0;
   int c;
@@ -921,14 +921,17 @@ int _cupsImageReadEXIF(cups_image_t *img, FILE *fp)
 
   // return 1;
 
+  fseek(fp, 0, SEEK_SET);
+
   while ((c = fgetc(fp)) != EOF)
   {
     buf[pos] = c;
     pos++;
   }
 
+  fseek(fp, originalOffset, SEEK_SET);
 
-  ExifData *ed = exif_data_new_from_data(buf, res);
+  ExifData *ed = exif_data_new_from_data(buf, pos);
 
   if (ed == NULL)
   {
@@ -945,6 +948,7 @@ int _cupsImageReadEXIF(cups_image_t *img, FILE *fp)
   ExifEntry *entryX = exif_content_get_entry(ed->ifd[ifd], tagX);
 
   ExifEntry *entryY = exif_content_get_entry(ed->ifd[ifd], tagY);
+
   if (entryX)
   {
     char buf1[1024];
@@ -952,6 +956,7 @@ int _cupsImageReadEXIF(cups_image_t *img, FILE *fp)
     exif_entry_get_value(entryX, buf1, sizeof(buf1));
 
     trim_spaces(buf1);
+    
     if (*buf1)
     {
       int xRes;
@@ -967,13 +972,17 @@ int _cupsImageReadEXIF(cups_image_t *img, FILE *fp)
     exif_entry_get_value(entryY, buf2, sizeof(buf2));
 
     trim_spaces(buf2);
+    //SACHIN THAKAN : control is not reaching here
     if (*buf2)
     {
       int yRes;
       sscanf(buf2, "%d", &yRes);
       img->yppi = yRes;
+      //SACHIN THAKAN : control is not reaching here
     }
   }
+
+  //SACHIN THAKAN: control is reaching here
 
   return 1;
 }
