@@ -372,8 +372,6 @@ cfImageOpenFP(
 
   img->cachefile = -1;
   img->max_ics   = CF_TILE_MINIMUM;
-  img->xppi      = 200;
-  img->yppi      = 200;
 
   if (!memcmp(header, "GIF87a", 6) || !memcmp(header, "GIF89a", 6))
     status = _cfImageReadGIF(img, fp, primary, secondary, saturation, hue,
@@ -891,7 +889,7 @@ static void trim_spaces(char *buf)
   implementation for EXIF read function
   */
 
-int _cupsImageReadEXIF(cups_image_t *img, FILE *fp)
+int _cupsImageReadEXIF(cf_image_t *img, FILE *fp)
 {
   
   if (fp == NULL)
