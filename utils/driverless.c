@@ -67,9 +67,12 @@ static void cancel_job(int sig);
 static cups_array_t *uuids = NULL;
 
 static int
-compare_service_uri(char *a, char *b)
+compare_services(avahi_srv_t *a, avahi_srv_t *b)
 {
-  return (strcmp(a, b));
+  if(a == NULL || b == NULL)
+  return 1;
+
+  return (strcmp(a->name, b->name));
 }
 
 void listPrintersInArrayV2(int reg_type_no, int mode, int isFax,
@@ -107,14 +110,17 @@ void listPrintersInArrayV2(int reg_type_no, int mode, int isFax,
 
   if(reg_type_no < 1)
   {
-    scheme = "ipps";
     reg_type = "_ipp._tcp";
   }
   else if(reg_type_no > 1){
-    scheme = "ipp";
     reg_type = "_ipps._tcp";
   }
-    
+  
+
+  if(!strcmp(reg_type, "_ipp._tcp")){
+    scheme = "ipp";
+  }
+  else scheme = "ipps";
 
   /*
       process txt key-value pairs
@@ -124,8 +130,6 @@ void listPrintersInArrayV2(int reg_type_no, int mode, int isFax,
   {
     char *currentKey = service->txt[i].name;
     char *currentValue = service->txt[i].value;
-
-    // fprintf(stderr, "key[%d] = %s, value[%d] = %s\n", i, currentKey, i, currentValue);
 
     if (!strcmp(currentKey, "UUID"))
     {
@@ -198,7 +202,7 @@ void listPrintersInArrayV2(int reg_type_no, int mode, int isFax,
 
     if (mode == 0)
       /* Manual call, only show URI, nothing more */
-      printf("%s\n", service_uri);
+      printf("%shello\n", service_uri);
     else
     {
       /* Call by CUPS, either as PPD generator
@@ -405,7 +409,7 @@ void resolve_services(cups_array_t *ipps_services, cups_array_t *ipp_services, r
 
     if (!avahi_got_data)
     {
-
+      
       int active = 0;
       int ipp_resolved = cupsArrayCount(ipp_services);
       int ipps_resolved = cupsArrayCount(ipps_services);
@@ -463,6 +467,7 @@ void resolve_services(cups_array_t *ipps_services, cups_array_t *ipp_services, r
         break;
       }
     }
+   
   }
 }
 
@@ -475,10 +480,10 @@ int list_printers(int mode, int reg_type_no, int isFax)
             IPP */
 
   service_uri_list_ipps =
-      cupsArrayNew3((cups_array_func_t)compare_service_uri, NULL, NULL, 0, NULL,
+      cupsArrayNew3((cups_array_func_t)compare_services, NULL, NULL, 0, NULL,
                     (cups_afree_func_t)free);
   service_uri_list_ipp =
-      cupsArrayNew3((cups_array_func_t)compare_service_uri, NULL, NULL, 0, NULL,
+      cupsArrayNew3((cups_array_func_t)compare_services, NULL, NULL, 0, NULL,
                     (cups_afree_func_t)free);
 
    /*
@@ -536,11 +541,13 @@ int list_printers(int mode, int reg_type_no, int isFax)
   for (int i = 0; i < cupsArrayCount(service_uri_list_ipp) && reg_type_no <= 1; i++)
   {
     if(cupsArrayFind(service_uri_list_ipps, (char *)cupsArrayIndex(service_uri_list_ipp, i)) == NULL)
+    // fprintf(stderr, "printing\n");
     listPrintersInArrayV2(0, mode, isFax, (avahi_srv_t *)cupsArrayIndex(service_uri_list_ipp, i));
   }
 
   for (int j = 0; j < cupsArrayCount(service_uri_list_ipps) && reg_type_no >= 1; j++)
   {
+    // fprintf(stderr, "printing\n");
     listPrintersInArrayV2(2, mode, isFax,
                           (avahi_srv_t *)cupsArrayIndex(service_uri_list_ipps, j));
   }
